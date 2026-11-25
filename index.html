@@ -22,15 +22,15 @@
     <span class="pt" style="background:var(--green)"></span>
     <div class="field"><input id="qA" data-i18n-ph="from_ph" autocomplete="off" aria-label="From"><div class="drop" id="dA" hidden></div></div>
     <button class="ib" id="locA" aria-label="Start from my location" title="My location">◎</button>
-    <span class="line"></span><span></span><span></span>
+    <span class="line"></span><span></span><button class="ib sm" id="swap" aria-label="Swap start and end" title="Swap">⇅</button>
     <span class="pt" style="background:var(--red)"></span>
     <div class="field"><input id="qB" data-i18n-ph="to_ph" autocomplete="off" aria-label="To"><div class="drop" id="dB" hidden></div></div>
-    <button class="ib" id="swap" aria-label="Swap start and end" title="Swap">⇅</button>
+    <button class="ib mic" id="mic" aria-label="Voice search" title="Voice search">🎤</button>
   </div>
   <div class="quick" id="quick" hidden></div>
   <div class="opts">
-    <div class="seg" id="vehSeg" role="group" aria-label="Vehicle"><button data-v="car" data-i18n="car">🚗 Car</button><button data-v="bike" data-i18n="bike">🛵 Bike</button></div>
-    <label class="trsel"><span data-i18n="traffic_lbl">Traffic</span><select id="trSel" aria-label="Main-road traffic"><option value="auto">Auto</option><option value="light" data-i18n="tr_light_cap">Light</option><option value="normal" data-i18n="tr_normal_cap">Normal</option><option value="heavy" data-i18n="tr_heavy_cap">Heavy</option></select></label>
+    <div class="seg" id="vehSeg" role="group" aria-label="How are you travelling?"><button data-v="car" data-i18n="car">🚗 Car</button><button data-v="bike" data-i18n="bike">🛵 Bike</button><button data-v="cycle" data-i18n="cycle">🚲 Cycle</button><button data-v="walk" data-i18n="walk">🚶 Walk</button></div>
+    <label class="trsel" id="trWrap"><span data-i18n="traffic_lbl">Traffic</span><select id="trSel" aria-label="Main-road traffic"><option value="auto">Auto</option><option value="light" data-i18n="tr_light_cap">Light</option><option value="normal" data-i18n="tr_normal_cap">Normal</option><option value="heavy" data-i18n="tr_heavy_cap">Heavy</option></select></label>
   </div>
   <div id="result"></div>
   <div id="status"></div>
@@ -103,6 +103,9 @@
 </div>
 <div class="sheet" id="repWhere" hidden role="dialog" aria-modal="true">
   <div class="box"><b data-i18n="report_where">Where is it?</b><div class="tools"><button id="repHere" data-i18n="rep_here">At my location</button><button id="repMap" data-i18n="rep_map">Pick on map</button></div><button id="repCancel2" data-i18n="cancel">Cancel</button></div>
+</div>
+<div class="sheet" id="micSheet" hidden role="dialog" aria-modal="true">
+  <div class="box mic-box"><div class="pulse">🎤</div><b id="micState"></b><div id="micText" class="mictext"></div><button id="micCancel" data-i18n="cancel">Cancel</button></div>
 </div>
 <div class="toast" id="toast"></div>
 

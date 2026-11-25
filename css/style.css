@@ -22,6 +22,16 @@ button:focus-visible,input:focus-visible,select:focus-visible{outline:2px solid 
 button.on{background:var(--amber);border-color:var(--amber);color:#1b1e21}
 select{font:inherit;font-size:16px;min-height:44px;border:1px solid var(--line);border-radius:10px;background:var(--card);color:var(--ink);padding:0 8px;width:100%}
 .ib{padding:0;width:44px;font-size:18px}
+.ib.sm{min-height:30px;height:30px;width:44px;font-size:15px;border:0;background:none;color:var(--mute)}
+.ib.mic{background:var(--green);border-color:var(--green);color:#fff}
+.trip .line{height:30px!important}
+.drop .chips{display:flex;flex-wrap:wrap;gap:6px;padding:8px 10px;border-bottom:1px solid var(--line)}
+.drop .chips button{display:inline-flex;width:auto;min-height:34px;border:1px solid var(--line);border-radius:999px;padding:0 10px;font-size:13px;font-weight:600}
+.mic-box{align-items:center;text-align:center;padding-top:28px!important}
+.pulse{width:84px;height:84px;border-radius:50%;background:var(--green);color:#fff;font-size:38px;display:flex;align-items:center;justify-content:center;animation:pulse 1.2s infinite}
+@keyframes pulse{0%{box-shadow:0 0 0 0 #1f9d5588}100%{box-shadow:0 0 0 26px #1f9d5500}}
+.mictext{font-size:18px;min-height:28px;color:var(--mute)}
+.mic-box button{width:100%}
 
 .trip{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:6px;display:grid;grid-template-columns:22px 1fr 44px;gap:2px 8px;align-items:center}
 .trip .pt{width:12px;height:12px;border-radius:50%;justify-self:center}
@@ -38,9 +48,11 @@ select{font:inherit;font-size:16px;min-height:44px;border:1px solid var(--line);
 .quick[hidden]{display:none}
 .quick button{flex:none;border-radius:999px;min-height:40px}
 
-.opts{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:6px}
+.opts{display:flex;flex-wrap:wrap;gap:6px}
+.opts .seg{flex:1 1 300px}.opts .trsel{flex:1 1 150px}
+.trsel[hidden]{display:none}
 .seg{display:flex;background:var(--card);border:1px solid var(--line);border-radius:12px;padding:3px;gap:3px}
-.seg button{flex:1;border:0;min-height:38px;padding:0 6px;font-size:14px;border-radius:9px;background:transparent;white-space:nowrap}
+.seg button{flex:1;border:0;min-height:40px;padding:0 4px;font-size:13px;border-radius:9px;background:transparent;white-space:nowrap}
 .seg button.on{background:var(--ink);color:var(--bg)}
 .trsel{display:flex;align-items:center;gap:6px;background:var(--card);border:1px solid var(--line);border-radius:12px;padding:0 4px 0 12px;font-size:14px}
 .trsel span{color:var(--mute)}

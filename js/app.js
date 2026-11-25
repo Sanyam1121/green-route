@@ -31,7 +31,14 @@
     few: { color: '#8a4fd8', bg: '#6a3fbf' }
   };
   // km/h by class: motorway,trunk,primary,secondary,tertiary | unclassified,residential,living_street,service,road
-  const BASE = { car: [60, 45, 35, 30, 25, 20, 16, 10, 10, 15], bike: [50, 40, 32, 28, 24, 22, 20, 16, 15, 18] };
+  //                | track,cycleway,path,pedestrian,footway,steps   (0 = not allowed)
+  const BASE = {
+    car: [60, 45, 35, 30, 25, 20, 16, 10, 10, 15, 0, 0, 0, 0, 0, 0],
+    bike: [50, 40, 32, 28, 24, 22, 20, 16, 15, 18, 12, 0, 0, 0, 0, 0],
+    cycle: [0, 15, 15, 15, 15, 15, 14, 12, 12, 12, 10, 16, 10, 6, 6, 0],
+    walk: [0, 4.5, 4.8, 4.8, 4.8, 4.8, 4.8, 4.8, 4.8, 4.8, 4.5, 4.8, 4.8, 5, 5, 3]
+  };
+  const motor = () => opt.vehicle === 'car' || opt.vehicle === 'bike';
   const TRAFFIC = { light: [1, 1, 1, 1, 1], normal: [.9, .8, .8, .85, .9], heavy: [.7, .5, .5, .55, .7] };
   function autoTraffic(d = new Date()) {
     const m = d.getHours() * 60 + d.getMinutes(), sun = d.getDay() === 0;
@@ -40,7 +47,11 @@
     return 'normal';
   }
   const trafficAt = d => opt.traffic === 'auto' ? autoTraffic(d) : opt.traffic;
-  function speeds(gali, when) { const b = BASE[opt.vehicle], tr = TRAFFIC[trafficAt(when)]; return b.map((v, i) => v * (i < 5 ? tr[i] * (gali ? 0.55 : 1) : 1) / 3.6); }
+  function speeds(gali, when) {
+    const b = BASE[opt.vehicle] || BASE.car, tr = motor() ? TRAFFIC[trafficAt(when)] : [1, 1, 1, 1, 1];
+    return b.map((v, i) => v * (i < 5 ? tr[i] * (gali ? 0.55 : 1) : 1) / 3.6);
+  }
+  const lightWait = () => opt.vehicle === 'walk' ? Math.round(opt.wait * 0.5) : opt.wait;
 
   /* ---------------- state ---------------- */
   let G = null, Z = null, A = null, B = null, results = {}, sel = 'best', editMode = false, dataNote = '';
@@ -67,14 +78,15 @@
     G = null; status(t('loading')); results = {}; routeLayer.clearLayers(); $('result').innerHTML = '';
     let c = null;
     if (!area) {
-      try { c = await getJSON(`data/v2/${name}.json`); } catch (e) { }
+      try { c = await getJSON(`data/v3/${name}.json`); } catch (e) { }
+      if (!c) try { c = await getJSON(`data/v2/${name}.json`); } catch (e) { }
       if (!c && name === 'jalandhar') try { c = await getJSON('data/jalandhar.json'); } catch (e) { }
       if (c) dataNote = t('data_from', { d: new Date(c.updated).toLocaleDateString(I18N.locale(), { day: 'numeric', month: 'short' }) });
     }
-    const bb = (area || CITIES[name].bbox).map(x => x.toFixed(4)).join(','), key = 'v2:' + bb;
+    const bb = (area || CITIES[name].bbox).map(x => x.toFixed(4)).join(','), key = 'v3:' + bb;
     if (!c) { const k = await cacheGet(key); if (k && Date.now() - k.t < 7 * 864e5) c = k.d; }
     if (!c) {
-      const q = `[out:json][timeout:120];way["highway"~"^(motorway|trunk|primary|secondary|tertiary|unclassified|residential|living_street|service|road|motorway_link|trunk_link|primary_link|secondary_link|tertiary_link)$"]["access"!~"^(private|no)$"]["motor_vehicle"!="no"]["area"!="yes"]["service"!~"^(parking_aisle|driveway|drive-through|emergency_access)$"](${bb})->.r;.r out body qt;node(w.r);out skel qt;(node["highway"="traffic_signals"](${bb});node["crossing"="traffic_signals"](${bb});node["highway"="speed_camera"](${bb}););out body qt;`;
+      const q = `[out:json][timeout:120];(way["highway"~"^(motorway|trunk|primary|secondary|tertiary|unclassified|residential|living_street|service|road|motorway_link|trunk_link|primary_link|secondary_link|tertiary_link)$"]["access"!~"^(private|no)$"]["area"!="yes"]["service"!~"^(parking_aisle|driveway|drive-through|emergency_access)$"](${bb});way["highway"~"^(track|cycleway|path|pedestrian|footway|steps)$"]["access"!~"^(private|no)$"]["area"!="yes"](${bb}););out body qt;node(w);out skel qt;(node["highway"="traffic_signals"](${bb});node["crossing"="traffic_signals"](${bb});node["highway"="speed_camera"](${bb}););out body qt;`;
       const eps = ['https://maps.mail.ru/osm/tools/overpass/api/interpreter', 'https://overpass.private.coffee/api/interpreter', 'https://overpass.kumi.systems/api/interpreter', 'https://overpass-api.de/api/interpreter'];
       for (let round = 0; round < 2 && !c; round++) for (const ep of eps) {
         try {
@@ -90,7 +102,8 @@
     }
     try { const j = await getJSON('data/signals-extra.json'); shared = { add: j.add || [], del: j.del || [] }; } catch (e) { }
     status(t('preparing')); await new Promise(r => setTimeout(r, 20));
-    G = Core.build(c); liveArea = area || null;
+    if (!area) await loadPlaces(name);
+    const g = Core.build(c); Z = null; G = g; liveArea = area || null;
     applySignals(); drawCams(); loadReports();
     if (!A || !B) idle();
     if (A && B) go();
@@ -206,23 +219,24 @@
   }
   function routeOpts(mode, when) {
     const sp = speeds(false, when), car = opt.vehicle === 'car';
-    const base = { realSp: sp, car, narrowFactor: car ? 2.5 : 1, pen: car ? pen.car : pen.bike, block };
+    const base = { who: opt.vehicle, realSp: sp, narrowFactor: car ? 2.5 : 1, pen: car ? pen.car : pen.bike, block };
     if (mode === 'short') return { ...base, mode: 'short', costSp: sp };
     if (mode === 'few') return { ...base, mode: 'time', P: 900, costSp: sp };
-    if (mode === 'gali') return { ...base, mode: 'time', P: opt.wait * 1.5, costSp: speeds(true, when) };
-    return { ...base, mode: 'time', P: opt.wait, costSp: sp };
+    if (mode === 'gali') return { ...base, mode: 'time', P: lightWait() * 1.5, costSp: speeds(true, when) };
+    return { ...base, mode: 'time', P: lightWait(), costSp: sp };
   }
   function go() {
     routeLayer.clearLayers(); results = {}; $('result').innerHTML = '';
     if (!G || !A || !B) { updateHash(); idle(); return; }
-    const s = Core.nearest(G, A.lat, A.lng, true), d = Core.nearest(G, B.lat, B.lng, true);
+    const mask = Core.usable(G, routeOpts('best'));
+    const s = Core.nearest(G, A.lat, A.lng, mask), d = Core.nearest(G, B.lat, B.lng, mask);
     if (!s || !d || s.m > 800 || d.m > 800) { status(t('outside_area'), true); return; }
     if (s.i === d.i) { status(t('same_spot'), true); return; }
     // try nearby start points (e.g. the other side of a divided road) and keep the quickest
     let best = null, src = s.i;
-    for (const c of Core.nearMany(G, A.lat, A.lng)) {
+    for (const c of Core.nearMany(G, A.lat, A.lng, 35, 6, mask)) {
       const r = Core.route(G, Z, c.i, d.i, routeOpts('best')); if (!r) continue;
-      const score = r.time + r.signals.length * opt.wait + c.m / 1.4;
+      const score = r.time + r.signals.length * lightWait() + c.m / 1.4;
       if (!best || score < best._score) { best = r; best._score = score; src = c.i; }
     }
     if (!best) { status(t('no_route'), true); return; }
@@ -237,7 +251,7 @@
     const bnd = L.latLngBounds([[A.lat, A.lng], [B.lat, B.lng]]);
     if (isPhone() || !map.getBounds().pad(-0.1).contains(bnd)) map.fitBounds(bnd, { padding: isPhone() ? [40, 40] : [60, 60], paddingBottomRight: isPhone() ? [30, Math.round($('panel').offsetHeight + 30)] : [60, 60] });
   }
-  const mins = r => Math.max(1, Math.round((r.time + r.signals.length * opt.wait) / 60));
+  const mins = r => Math.max(1, Math.round((r.time + r.signals.length * lightWait()) / 60));
   const km = r => (r.len / 1000).toFixed(r.len < 10000 ? 1 : 0);
   const galiPct = r => Math.round(100 * r.small / Math.max(1, r.len));
 
@@ -271,7 +285,7 @@
       <div class="hero" style="background:${MODES[sel].bg}">
         <div class="k">${esc(t('mode_' + sel))}${sel === 'best' ? ' · ' + esc(t('recommended')) : ''}</div>
         <div class="t">${mins(cur)} ${esc(t('min'))}<small>${km(cur)} km · ${esc(t('lights', { n: cur.signals.length }))}</small></div>
-        <div class="g">${esc(t('pct_gali', { n: galiPct(cur) }))}</div>
+        <div class="g">${esc(t(motor() ? 'pct_gali' : 'pct_lanes', { n: galiPct(cur) }))}</div>
         <div class="why">${esc(why)}</div>${warn}${repWarn}
         <div class="acts"><button class="go" id="startNav">▶ ${esc(t('start'))}</button><button id="share">${esc(t('share'))}</button></div>
         <a class="gm" id="gmaps" href="${navUrl(cur)}" target="_blank" rel="noopener">${esc(t('open_gmaps'))}</a>
@@ -287,12 +301,12 @@
   }
   // "Leave now or later?" — same trip at +15/+30/+60 minutes using the time-of-day traffic guess
   function leaveRow() {
-    if (opt.traffic !== 'auto' || !results.best) return '';
+    if (opt.traffic !== 'auto' || !results.best || !motor()) return '';
     const s = results.best.path[0], d = results._dst, now = Date.now(), out = [];
     for (const off of [0, 15, 30, 60]) {
       const when = new Date(now + off * 60000);
       const r = off === 0 ? results.best : Core.route(G, Z, s, d, routeOpts('best', when));
-      if (r) out.push({ off, m: Math.max(1, Math.round((r.time + r.signals.length * opt.wait) / 60)), tr: autoTraffic(when) });
+      if (r) out.push({ off, m: Math.max(1, Math.round((r.time + r.signals.length * lightWait()) / 60)), tr: autoTraffic(when) });
     }
     const bestM = Math.min(...out.map(x => x.m));
     if (Math.max(...out.map(x => x.m)) - bestM < 2) return '';
@@ -314,7 +328,7 @@
     const pool = smallIdx.length >= n ? smallIdx : p.map((_, k) => k).slice(1, -1);
     const wp = []; for (let k = 1; k <= n && pool.length; k++) { const i = p[pool[Math.floor(k * (pool.length - 1) / (n + 1))]]; wp.push(G.lat[i].toFixed(5) + ',' + G.lon[i].toFixed(5)); }
     const f = x => x.lat.toFixed(5) + ',' + x.lng.toFixed(5);
-    return `https://www.google.com/maps/dir/?api=1&origin=${f(A)}&destination=${f(B)}${wp.length ? '&waypoints=' + encodeURIComponent(wp.join('|')) : ''}&travelmode=${opt.vehicle === 'bike' ? 'two-wheeler' : 'driving'}`;
+    return `https://www.google.com/maps/dir/?api=1&origin=${f(A)}&destination=${f(B)}${wp.length ? '&waypoints=' + encodeURIComponent(wp.join('|')) : ''}&travelmode=${({ bike: 'two-wheeler', cycle: 'bicycling', walk: 'walking' })[opt.vehicle] || 'driving'}`;
   }
 
   /* ---------------- share link ---------------- */
@@ -381,68 +395,250 @@
     for (const b of $('placesList').querySelectorAll('button')) b.onclick = () => { const p = list[+b.dataset.i]; places = places.filter(x => x !== p); store.set('gr-places', places); drawPlacesList(); drawQuick(); };
   }
 
-  /* ---------------- search ---------------- */
+  /* ---------------- search: local place index + online search + voice ---------------- */
+  const TYPE_ICON = { fuel: '⛽', ev: '🔌', hospital: '🏥', clinic: '🩺', pharmacy: '💊', atm: '🏧', bank: '🏦', school: '🏫', college: '🎓', restaurant: '🍽️', cafe: '☕', hotel: '🏨', police: '👮', bus: '🚌', train: '🚆', cinema: '🎬', market: '🛍️', park: '🌳', sport: '🏟️', govt: '🏛️', area: '🏘️', road: '🛣️', shop: '🏪', sight: '📍', office: '🏢', temple: '🛕', gurdwara: 'ੴ', mosque: '🕌', church: '⛪', other: '📍' };
+  // words that mean "find the nearest one of these" (English, Hinglish, Hindi, Punjabi)
+  const CATS = {
+    fuel: ['petrol pump', 'petrol', 'pump', 'fuel', 'diesel', 'cng', 'पेट्रोल पंप', 'पेट्रोल', 'ਪੈਟਰੋਲ ਪੰਪ', 'ਪੈਟਰੋਲ'],
+    ev: ['ev charging', 'charging station', 'charging'],
+    hospital: ['hospital', 'aspatal', 'haspatal', 'hospitals', 'अस्पताल', 'हॉस्पिटल', 'ਹਸਪਤਾਲ'],
+    clinic: ['clinic', 'doctor', 'doctors', 'dentist', 'डॉक्टर', 'ਡਾਕਟਰ'],
+    pharmacy: ['chemist', 'medical store', 'medical', 'pharmacy', 'dawai', 'dawa', 'दवाई', 'केमिस्ट', 'ਦਵਾਈ', 'ਕੈਮਿਸਟ'],
+    atm: ['atm', 'एटीएम', 'ਏਟੀਐਮ'], bank: ['bank', 'बैंक', 'ਬੈਂਕ'],
+    temple: ['mandir', 'temple', 'मंदिर', 'ਮੰਦਰ'], gurdwara: ['gurdwara', 'gurudwara', 'gurduara', 'गुरुद्वारा', 'ਗੁਰਦੁਆਰਾ'],
+    mosque: ['masjid', 'mosque', 'मस्जिद', 'ਮਸਜਿਦ'], church: ['church', 'girja', 'चर्च', 'ਚਰਚ'],
+    school: ['school', 'स्कूल', 'ਸਕੂਲ'], college: ['college', 'university', 'कॉलेज', 'ਕਾਲਜ'],
+    restaurant: ['restaurant', 'dhaba', 'khana', 'food', 'ढाबा', 'ਢਾਬਾ'], cafe: ['cafe', 'coffee', 'bakery', 'sweets', 'mithai', 'मिठाई', 'ਮਿਠਾਈ'],
+    hotel: ['hotel', 'होटल', 'ਹੋਟਲ'], police: ['police station', 'police', 'thana', 'chowki', 'थाना', 'पुलिस', 'ਥਾਣਾ', 'ਪੁਲਿਸ'],
+    bus: ['bus stand', 'bus stop', 'bus adda', 'बस स्टैंड', 'ਬੱਸ ਅੱਡਾ'], train: ['railway station', 'railway', 'station', 'train', 'रेलवे स्टेशन', 'ਰੇਲਵੇ ਸਟੇਸ਼ਨ'],
+    park: ['park', 'garden', 'पार्क', 'ਪਾਰਕ'], market: ['market', 'bazaar', 'bazar', 'mall', 'बाज़ार', 'मार्केट', 'ਬਾਜ਼ਾਰ'],
+    cinema: ['cinema', 'movie', 'theatre', 'pvr', 'सिनेमा', 'ਸਿਨੇਮਾ'], sport: ['gym', 'stadium', 'जिम', 'ਜਿਮ'], govt: ['post office', 'court', 'dc office']
+  };
+  const NEAR_WORDS = /\b(near me|nearby|nearest|closest|paas|pass|kol|nede|najdik|nazdeek)\b|पास|नज़दीक|ਨੇੜੇ|ਕੋਲ/g;
+  let PL = [];
+  async function loadPlaces(name) {
+    PL = [];
+    try {
+      const j = await getJSON(`data/v3/${name}-places.json`);
+      PL = j.p.map(p => { const key = norm(p[0] + ' ' + (p[4] || '')); return { n: p[0], la: p[1], lo: p[2], ty: p[3], st: p[5] || '', key, tok: key.split(' '), sk: key.split(' ').map(skel) }; });
+    } catch (e) { }
+  }
+  // Devanagari / Gurmukhi → rough Latin, so "मॉडल टाउन" can match "Model Town"
+  const TR = {};
+  'अ a|आ a|इ i|ई i|उ u|ऊ u|ए e|ऐ ai|ओ o|औ au|क k|ख kh|ग g|घ gh|ङ n|च ch|छ chh|ज j|झ jh|ञ n|ट t|ठ th|ड d|ढ dh|ण n|त t|थ th|द d|ध dh|न n|प p|फ ph|ब b|भ bh|म m|य y|र r|ल l|व v|श sh|ष sh|स s|ह h|ड़ r|ढ़ rh|क़ q|ख़ kh|ग़ g|ज़ z|फ़ f|ा a|ि i|ी i|ु u|ू u|े e|ै ai|ो o|ौ au|ॉ o|ं n|ँ n|ः h|्  |ਅ a|ਆ a|ਇ i|ਈ i|ਉ u|ਊ u|ਏ e|ਐ ai|ਓ o|ਔ au|ਕ k|ਖ kh|ਗ g|ਘ gh|ਙ n|ਚ ch|ਛ chh|ਜ j|ਝ jh|ਞ n|ਟ t|ਠ th|ਡ d|ਢ dh|ਣ n|ਤ t|ਥ th|ਦ d|ਧ dh|ਨ n|ਪ p|ਫ ph|ਬ b|ਭ bh|ਮ m|ਯ y|ਰ r|ਲ l|ਵ v|ਸ s|ਸ਼ sh|ਹ h|ੜ r|ਜ਼ z|ਫ਼ f|ਖ਼ kh|ਗ਼ g|ਾ a|ਿ i|ੀ i|ੁ u|ੂ u|ੇ e|ੈ ai|ੋ o|ੌ au|ੰ n|ਂ n|ੱ |੍ '.split('|').forEach(x => { const [k, v] = x.split(' '); TR[k] = v || ''; });
+  const CONS = /[\u0915-\u0939\u0958-\u095F\u0A15-\u0A39\u0A59-\u0A5E]/;
+  TR['\u093C'] = ''; TR['\u0A3C'] = '';
+  function translit(s) {
+    let out = '';
+    const ch = [...s.normalize('NFC')];
+    for (let i = 0; i < ch.length; i++) {
+      const c = ch[i];
+      if (TR[c] === undefined) { out += c; continue; }
+      out += TR[c];
+      const nx = ch[i + 1];
+      if (CONS.test(c) && nx && CONS.test(nx)) out += 'a'; // inherent vowel between consonants
+    }
+    return out;
+  }
+  const hasIndic = s => /[ऀ-ॿ਀-੿]/.test(s);
+  function norm(s) { return String(s).toLowerCase().normalize('NFC').replace(/[^\p{L}\p{N}\p{M}]+/gu, ' ').replace(/\s+/g, ' ').trim(); }
+  const skel = w => w.length >= 3 && /^[a-z0-9]+$/.test(w) ? w.replace(/[aeiouwyh]/g, '').replace(/(.)\1+/g, '$1') : '';
+  function localSearch(q, limit = 8) {
+    const qs = [...new Set([norm(q), ...(hasIndic(q) ? [norm(translit(q))] : [])])].filter(Boolean);
+    const here = nearRef(), out = [];
+    for (const qn of qs) {
+      const qt = qn.split(' '), qsk = qt.map(skel);
+      for (const p of PL) {
+        let score = 0, ok = true;
+        for (let k = 0; k < qt.length; k++) {
+          const w = qt[k];
+          let best = 0;
+          for (let j = 0; j < p.tok.length; j++) {
+            const tk = p.tok[j];
+            if (tk === w) { best = Math.max(best, 3); }
+            else if (tk.startsWith(w)) best = Math.max(best, w.length >= 2 ? 2 : 1);
+            else if (w.length >= 4 && tk.includes(w)) best = Math.max(best, 1);
+            else if (qsk[k] && qsk[k].length >= 2 && p.sk[j] && p.sk[j].startsWith(qsk[k])) best = Math.max(best, 0.8);
+          }
+          if (!best) { ok = false; break; }
+          score += best;
+        }
+        if (!ok) continue;
+        if (p.key.startsWith(qn)) score += 2;
+        if (['area', 'market', 'train', 'bus', 'hospital', 'college', 'road'].includes(p.ty)) score += 0.7;
+        const dkm = Core.hav(here[0], here[1], p.la, p.lo) / 1000;
+        score -= Math.min(2, dkm / 6) + p.n.length / 80;
+        out.push({ p, score });
+      }
+    }
+    out.sort((a, b) => b.score - a.score);
+    const seen = new Set(), res = [];
+    for (const { p } of out) { const k = p.n + '|' + p.ty; if (seen.has(k)) continue; seen.add(k); res.push(placeItem(p, here)); if (res.length >= limit) break; }
+    return res;
+  }
+  function nearRef() { if (lastFix) return [lastFix.lat, lastFix.lng]; if (A) return [A.lat, A.lng]; const c = map.getCenter(); return [c.lat, c.lng]; }
+  const distLabel = m => m < 1000 ? Math.round(m / 10) * 10 + ' m' : (m / 1000).toFixed(m < 10000 ? 1 : 0) + ' km';
+  function placeItem(p, here) {
+    const d = Core.hav(here[0], here[1], p.la, p.lo);
+    return { name: p.n, sub: [t('ty_' + p.ty), p.st, distLabel(d)].filter(Boolean).join(' · '), lat: p.la, lon: p.lo, icon: TYPE_ICON[p.ty] || '📍', local: true };
+  }
+  // "petrol pump", "nearest hospital", "ATM paas", "गुरुद्वारा" → nearest places of that type
+  function categoryOf(q) {
+    const qn = norm(q).replace(NEAR_WORDS, ' ').replace(/\s+/g, ' ').trim();
+    for (const [ty, words] of Object.entries(CATS)) for (const w of words) if (qn === norm(w)) return ty;
+    return null;
+  }
+  function nearestOfType(ty, limit = 8) {
+    const here = nearRef();
+    return PL.filter(p => p.ty === ty).map(p => ({ p, d: Core.hav(here[0], here[1], p.la, p.lo) })).sort((a, b) => a.d - b.d).slice(0, limit).map(x => placeItem(x.p, here));
+  }
+
   const ROMAN = { 1: 'i', 2: 'ii', 3: 'iii', 4: 'iv', 5: 'v', 6: 'vi', 7: 'vii', 8: 'viii', 9: 'ix', 10: 'x' };
   function variants(q) {
     const base = q.replace(/[,\s]*(jalandhar|jullundur|ludhiana|amritsar|phagwara)(\s*city)?\s*$/i, '').trim() || q;
     const rom = base.replace(/\b(phase|ph|sector|block)\s*\.?\s*(\d{1,2})\b/gi, (m, w, n) => `${w} ${ROMAN[n] || n}`);
     const noNum = base.replace(/\b(phase|ph)\s*\.?\s*(\d{1,2}|[ivx]+)\b/gi, '').replace(/\s+/g, ' ').trim();
-    return [...new Set([base, rom, noNum].filter(x => x && x.length > 1))];
+    const lat = hasIndic(base) ? translit(base) : '';
+    return [...new Set([base, rom, noNum, lat].filter(x => x && x.length > 1))];
   }
   const searchBox = () => { const b = CITIES[opt.city].bbox; return [b[1] - 0.2, b[0] - 0.2, b[3] + 0.2, b[2] + 0.2]; };
   const distC = (la, lo) => Core.hav(la, lo, CITIES[opt.city].center[0], CITIES[opt.city].center[1]);
+  async function photon(q, sig) {
+    const c = CITIES[opt.city].center, b = searchBox();
+    const j = await (await fetch(`https://photon.komoot.io/api/?q=${encodeURIComponent(q)}&lat=${c[0]}&lon=${c[1]}&limit=6&lang=en&bbox=${b.join(',')}`, { signal: sig })).json();
+    return j.features.map(f => { const p = f.properties; const sub = [p.street, p.district || p.locality, p.city || p.county].filter(Boolean).filter((v, i, a) => a.indexOf(v) === i && v !== p.name).join(', '); return { name: p.name || p.street || 'Place', sub, lat: f.geometry.coordinates[1], lon: f.geometry.coordinates[0], icon: '🔎' }; });
+  }
+  async function nominatim(q, sig) {
+    const b = searchBox();
+    const n = await (await fetch(`https://nominatim.openstreetmap.org/search?format=json&limit=6&countrycodes=in&bounded=1&viewbox=${b[0]},${b[3]},${b[2]},${b[1]}&q=${encodeURIComponent(q)}`, { signal: sig })).json();
+    return n.map(x => { const parts = x.display_name.split(',').map(s => s.trim()); return { name: parts[0], sub: parts.slice(1, 4).join(', '), lat: +x.lat, lon: +x.lon, icon: '🔎' }; });
+  }
+  function mergeInto(items, list) {
+    for (const it of list) {
+      if (distC(it.lat, it.lon) > 40000) continue;
+      if (items.some(x => norm(x.name) === norm(it.name) && Core.hav(x.lat, x.lon, it.lat, it.lon) < 400)) continue;
+      items.push(it);
+    }
+    return items;
+  }
+  // Full search used by typing and by voice: saved places, local index, then online services
+  async function findPlaces(q, sig, onUpdate) {
+    const cat = categoryOf(q);
+    if (cat && PL.length) { const r = nearestOfType(cat); if (r.length) { r.forEach(x => x.sub = t('nearest') + ' · ' + x.sub); onUpdate && onUpdate(r); return r; } }
+    const qn = norm(q);
+    let items = placeKey().filter(p => norm(p.n).startsWith(qn)).map(p => ({ name: p.n, sub: t('saved_place'), lat: p.la, lon: p.lo, icon: p.icon }));
+    for (const v of variants(q)) mergeInto(items, localSearch(v));
+    onUpdate && onUpdate(items);
+    const vs = variants(q);
+    await Promise.all(vs.slice(0, 3).map(v => photon(v, sig).then(r => { mergeInto(items, r); onUpdate && onUpdate(items); }).catch(() => { })));
+    if (items.length < 3) {
+      await new Promise(r => setTimeout(r, 400));
+      if (sig && sig.aborted) return items;
+      try { mergeInto(items, await nominatim(vs[1] || vs[0], sig)); } catch (e) { }
+      onUpdate && onUpdate(items);
+    }
+    return items;
+  }
+
   function setupSearch(which) {
-    const inp = $('q' + which), drop = $('d' + which); let t1, t2, ctl, items = [], seq = 0;
+    const inp = $('q' + which), drop = $('d' + which); let t1, ctl, items = [], seq = 0;
     const show = html => { drop.innerHTML = html; drop.hidden = !html; };
     const pick = i => { const it = items[i]; if (!it) return; show(''); inp.blur(); if (it.trip) { setPoint('A', it.trip.a, it.trip.an, true); setPoint('B', it.trip.b, it.trip.bn); return; } setPoint(which, [it.lat, it.lon], it.name); map.panTo([it.lat, it.lon]); };
+    const row = (it, i) => `<button data-i="${i}"><b>${it.icon ? it.icon + ' ' : ''}${esc(it.name)}</b><small>${esc(it.sub || '')}</small></button>`;
     const startMenu = () => {
       items = [];
       let h = which === 'A' ? `<button class="loc" data-loc="1">◎ ${esc(t('use_location'))}</button>` : '';
-      for (const p of placeKey()) { items.push({ name: p.n, sub: t('saved_place'), lat: p.la, lon: p.lo, icon: p.icon }); }
+      h += `<div class="chips">${['fuel', 'hospital', 'atm', 'pharmacy', 'gurdwara', 'temple', 'market', 'bus'].map(ty => `<button data-cat="${ty}">${TYPE_ICON[ty]} ${esc(t('ty_' + ty))}</button>`).join('')}</div>`;
+      for (const p of placeKey()) items.push({ name: p.n, sub: t('saved_place'), lat: p.la, lon: p.lo, icon: p.icon });
       for (const r of recent.filter(r => r.city === opt.city).slice(0, 4)) items.push({ name: `${r.an || t('start_pt')} → ${r.bn || t('dest_pt')}`, sub: t('recent_trip'), trip: r, icon: '🕘' });
-      h += items.map((it, i) => `<button data-i="${i}"><b>${it.icon} ${esc(it.name)}</b><small>${esc(it.sub)}</small></button>`).join('');
-      show(h);
+      show(h + items.map(row).join(''));
     };
-    const draw = () => show(items.length ? items.slice(0, 7).map((it, i) => `<button data-i="${i}"><b>${esc(it.name)}</b><small>${esc(it.sub)}</small></button>`).join('') : `<button disabled><small>${esc(t('searching'))}</small></button>`);
-    const add = list => {
-      for (const it of list) {
-        if (distC(it.lat, it.lon) > 40000) continue;
-        if (items.some(x => x.name === it.name && Core.hav(x.lat, x.lon, it.lat, it.lon) < 300)) continue;
-        items.push(it);
-      }
-      items = items.map((x, k) => ({ x, k, f: distC(x.lat, x.lon) < 9000 ? 0 : 1 })).sort((a, b) => a.f - b.f || a.k - b.k).map(o => o.x);
-    };
-    async function photon(q, sig) {
-      const c = CITIES[opt.city].center, b = searchBox();
-      const j = await (await fetch(`https://photon.komoot.io/api/?q=${encodeURIComponent(q)}&lat=${c[0]}&lon=${c[1]}&limit=6&lang=en&bbox=${b.join(',')}`, { signal: sig })).json();
-      return j.features.map(f => { const p = f.properties; const sub = [p.street, p.district || p.locality, p.city || p.county].filter(Boolean).filter((v, i, a) => a.indexOf(v) === i && v !== p.name).join(', '); return { name: p.name || p.street || 'Place', sub, lat: f.geometry.coordinates[1], lon: f.geometry.coordinates[0] }; });
-    }
-    async function nominatim(q, sig) {
-      const b = searchBox();
-      const n = await (await fetch(`https://nominatim.openstreetmap.org/search?format=json&limit=6&countrycodes=in&bounded=1&viewbox=${b[0]},${b[3]},${b[2]},${b[1]}&q=${encodeURIComponent(q)}`, { signal: sig })).json();
-      return n.map(x => { const parts = x.display_name.split(',').map(s => s.trim()); return { name: parts[0], sub: parts.slice(1, 4).join(', '), lat: +x.lat, lon: +x.lon }; });
-    }
-    inp.addEventListener('focus', () => { inp.select(); if (!inp.value || inp.value === t('pinned') || inp.value === t('my_location')) startMenu(); });
-    inp.addEventListener('blur', () => setTimeout(() => show(''), 200));
-    inp.addEventListener('input', () => {
-      clearTimeout(t1); clearTimeout(t2); const q = inp.value.trim();
-      if (q.length < 2) { startMenu(); return; }
-      const my = ++seq;
+    const draw = list => { items = list.slice(0, 10); show(items.length ? items.map(row).join('') : `<button disabled><small>${esc(t('searching'))}</small></button>`); };
+    const run = q => {
+      clearTimeout(t1); const my = ++seq;
       t1 = setTimeout(async () => {
-        if (ctl) ctl.abort(); ctl = new AbortController(); const sig = ctl.signal; items = [];
-        const vs = variants(q);
-        await Promise.all(vs.map(v => photon(v, sig).then(r => { if (my === seq) { add(r); draw(); } }).catch(() => { })));
-        if (my !== seq) return;
-        t2 = setTimeout(async () => {
-          try { const r = await nominatim(vs[1] || vs[0], sig); if (my === seq) { add(r); if (!r.length && vs[2] && vs[2] !== vs[0]) add(await nominatim(vs[2], sig)); } } catch (e) { }
-          if (my === seq) { if (items.length) draw(); else show(`<button disabled><small>${esc(t('no_places_found'))}</small></button>`); }
-        }, items.length ? 900 : 500);
-      }, 250);
-    });
+        if (ctl) ctl.abort(); ctl = new AbortController();
+        const res = await findPlaces(q, ctl.signal, r => { if (my === seq) draw(r); });
+        if (my === seq && !res.length) show(`<button disabled><small>${esc(t('no_places_found'))}</small></button>`);
+      }, PL.length ? 120 : 250);
+    };
+    inp.addEventListener('focus', () => { inp.select(); if (!inp.value || inp.value === t('pinned') || inp.value === t('my_location')) startMenu(); });
+    inp.addEventListener('blur', () => setTimeout(() => { if (document.activeElement !== inp) show(''); }, 200));
+    inp.addEventListener('input', () => { const q = inp.value.trim(); if (q.length < 2) { startMenu(); return; } run(q); });
     inp.addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); pick(0); } if (e.key === 'Escape') show(''); });
     drop.addEventListener('pointerdown', e => e.preventDefault());
-    drop.addEventListener('click', e => { const b = e.target.closest('button'); if (!b || b.disabled) return; if (b.dataset.loc) { show(''); inp.blur(); locate(true); } else pick(+b.dataset.i); });
+    drop.addEventListener('click', e => {
+      const b = e.target.closest('button'); if (!b || b.disabled) return;
+      if (b.dataset.loc) { show(''); inp.blur(); locate(true); }
+      else if (b.dataset.cat) { inp.value = t('ty_' + b.dataset.cat); draw(nearestOfType(b.dataset.cat).map(x => (x.sub = t('nearest') + ' · ' + x.sub, x))); if (!items.length) show(`<button disabled><small>${esc(t('none_nearby'))}</small></button>`); }
+      else pick(+b.dataset.i);
+    });
+    setupSearch.pick[which] = pick;
   }
+  setupSearch.pick = {};
+
+  /* ---------------- voice search: "ghar le chalo", "Model Town jana hai", "nearest petrol pump" ---------------- */
+  const FILLER = ['take me to', 'take me', 'navigate to', 'directions to', 'direction to', 'route to', 'go to', 'show me', 'show', 'i want to go to', 'i want to go', 'please', 'plz', 'jaldi',
+    'mujhe', 'mujhko', 'hame', 'hamein', 'humein', 'mainu', 'menu', 'manu', 'asi', 'assi', 'sanu', 'ji', 'bhai', 'paaji', 'yaar',
+    'le chalo', 'lai chalo', 'le chal', 'lai chal', 'le jao', 'lai jao', 'chalo', 'chalna hai', 'chalna', 'jana hai', 'jaana hai', 'jana he', 'jana h', 'jana ae', 'jaana ae', 'jaana', 'jana', 'janda', 'jaanda', 'pahuncha do', 'pahunchao', 'pohncha do',
+    'ka rasta', 'da rasta', 'ka raasta', 'da raasta', 'rasta', 'raasta', 'route', 'ki taraf', 'wal', 'tak', 'ko', 'nu', 'hai', 'he', 'ae', 'h',
+    'मुझे', 'हमें', 'ले चलो', 'ले चल', 'ले जाओ', 'चलो', 'चलना है', 'जाना है', 'जाना', 'पहुँचाओ', 'पहुंचाओ', 'का रास्ता', 'रास्ता', 'की तरफ़', 'की तरफ', 'तक', 'को', 'है', 'जी',
+    'ਮੈਨੂੰ', 'ਸਾਨੂੰ', 'ਲੈ ਚੱਲੋ', 'ਲੈ ਚਲੋ', 'ਲੈ ਜਾਓ', 'ਚੱਲੋ', 'ਚਲੋ', 'ਜਾਣਾ ਹੈ', 'ਜਾਣਾ', 'ਦਾ ਰਸਤਾ', 'ਰਸਤਾ', 'ਵੱਲ', 'ਤੱਕ', 'ਨੂੰ', 'ਹੈ', 'ਜੀ'].sort((a, b) => b.length - a.length);
+  const HOME_W = ['ghar', 'gher', 'home', 'house', 'घर', 'ਘਰ'], WORK_W = ['office', 'ofis', 'offc', 'daftar', 'dafter', 'kaam', 'work', 'dukaan', 'dukan', 'दफ़्तर', 'दफ्तर', 'ऑफिस', 'ऑफ़िस', 'ਦਫ਼ਤਰ', 'ਦਫਤਰ', 'ਆਫ਼ਿਸ'];
+  function stripFiller(s) {
+    let x = ' ' + norm(s) + ' ';
+    for (const f of FILLER) x = x.split(' ' + norm(f) + ' ').join(' ');
+    return x.replace(/\s+/g, ' ').trim();
+  }
+  async function voiceCommand(text) {
+    $('micText').textContent = '“' + text + '”';
+    let from = null, to = stripFiller(text);
+    // "X se Y", "from X to Y", "X ton Y" → both ends
+    const m = norm(text).match(/^(?:from )?(.+?) (?:se|to|ton|toh|से|ਤੋਂ) (.+)$/);
+    if (m && !/^(go|take me|navigate|route)$/.test(m[1])) { const a = stripFiller(m[1]), b = stripFiller(m[2]); if (a && b) { from = a; to = b; } }
+    if (!to) { voiceDone(t('voice_not_understood')); return; }
+    const resolve = async q => {
+      const qn = norm(q);
+      if (HOME_W.includes(qn) || WORK_W.includes(qn)) {
+        const kind = HOME_W.includes(qn) ? 'home' : 'work';
+        const p = placeKey().find(x => x.kind === kind);
+        if (!p) return { missing: kind };
+        return { name: p.n, lat: p.la, lon: p.lo };
+      }
+      const sp = placeKey().find(x => norm(x.n) === qn); if (sp) return { name: sp.n, lat: sp.la, lon: sp.lo };
+      const r = await findPlaces(q, null);
+      return r[0] || null;
+    };
+    const dest = await resolve(to);
+    if (!dest) { voiceDone(t('voice_no_place', { q: to })); return; }
+    if (dest.missing) { voiceDone(t('voice_save_first', { p: t(dest.missing) })); return; }
+    let src = null; if (from) src = await resolve(from);
+    voiceDone(t('voice_going', { p: dest.name }), true);
+    if (src && !src.missing) setPoint('A', [src.lat, src.lon], src.name, true);
+    setPoint('B', [dest.lat, dest.lon], dest.name, !A);
+    if (!A) locate(true);
+    map.panTo([dest.lat, dest.lon]);
+  }
+  let rec = null;
+  function voiceDone(msg, ok) {
+    speak(msg); toast(msg);
+    setTimeout(() => { $('micSheet').hidden = true; }, ok ? 600 : 1800);
+    $('micState').textContent = msg;
+  }
+  function startVoice() {
+    const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+    if (!SR) { toast(t('voice_unsupported')); return; }
+    try { speechSynthesis.cancel(); } catch (e) { }
+    rec = new SR(); rec.lang = I18N.voiceLang(); rec.interimResults = true; rec.maxAlternatives = 1; rec.continuous = false;
+    $('micSheet').hidden = false; $('micState').textContent = t('listening'); $('micText').textContent = t('voice_examples');
+    let final = '';
+    rec.onresult = e => { let s = ''; for (const r of e.results) { s += r[0].transcript; if (r.isFinal) final = s; } $('micText').textContent = '“' + s + '”'; };
+    rec.onerror = e => { if (e.error === 'not-allowed' || e.error === 'service-not-allowed') voiceDone(t('mic_denied')); else if (e.error === 'no-speech') voiceDone(t('voice_no_speech')); };
+    rec.onend = () => { if (final) voiceCommand(final.trim()); else if (!$('micSheet').hidden && $('micState').textContent === t('listening')) voiceDone(t('voice_no_speech')); };
+    try { rec.start(); } catch (e) { toast(t('voice_unsupported')); $('micSheet').hidden = true; }
+  }
+  $('mic').onclick = startVoice;
+  $('micCancel').onclick = () => { try { rec && rec.abort(); } catch (e) { } $('micSheet').hidden = true; };
 
   /* ---------------- location ---------------- */
   let lastFix = null;
@@ -529,7 +725,7 @@
     if (pr.off > 45 && acc < 60) nav.off++; else nav.off = 0;
     if ((nav.off >= 2 || pr.off > 90) && Date.now() - nav.lastReroute > 8000) {
       nav.lastReroute = Date.now();
-      const s = Core.nearest(G, la, lo, true);
+      const s = Core.nearest(G, la, lo, Core.usable(G, routeOpts(nav.mode)));
       const r = s && Core.route(G, Z, s.i, results._dst, routeOpts(nav.mode));
       if (r) { speak(t('v_reroute')); setNavRoute(r); return onPos(p); }
     }
@@ -562,7 +758,7 @@
     $('navText').textContent = cap(action(st));
     $('navThen').textContent = nextSt && nextSt.at - st.at < 150 ? t('then', { a: action(nextSt) }) : '';
     const lightsLeft = nav.r.signalAt.filter(k => nav.r.cum[k] > along).length;
-    const secLeft = nav.r.time * (left / Math.max(1, nav.r.len)) + lightsLeft * opt.wait;
+    const secLeft = nav.r.time * (left / Math.max(1, nav.r.len)) + lightsLeft * lightWait();
     const eta = new Date(Date.now() + secLeft * 1000).toLocaleTimeString(I18N.locale(), { hour: 'numeric', minute: '2-digit' });
     $('navLeft').textContent = `${Math.max(1, Math.round(secLeft / 60))} ${t('min')} · ${distText(left)} · ${t('lights_short', { n: lightsLeft })} · ${t('arrive_at', { t: eta })}`;
     $('navMute').textContent = opt.voice ? '🔊' : '🔇';
@@ -675,6 +871,7 @@
   /* ---------------- controls ---------------- */
   function drawOpts() {
     for (const b of $('vehSeg').children) b.classList.toggle('on', b.dataset.v === opt.vehicle);
+    $('trWrap').hidden = !motor();
     $('trSel').options[0].textContent = t('auto_tr', { t: t('tr_' + autoTraffic()) }); $('trSel').value = opt.traffic;
     $('citySel').value = opt.city; $('langSel').value = opt.lang; $('themeSel').value = opt.theme;
     $('voice').checked = opt.voice; $('likely').checked = opt.likely; $('wait').value = opt.wait; $('wv').textContent = opt.wait + ' s';
@@ -718,7 +915,8 @@
   loadCity(opt.city).then(() => { if (G && !fromHash() && !A) idle(); if (A && B) go(); });
   window.GR.setTrip = (a, b, an, bn) => { setPoint('A', a, an, true); setPoint('B', b, bn); };
   window.GR.select = id => { sel = id; render(); };
-  window.GR.ready = () => !!G;
+  window.GR.ready = () => !!G && !!Z;
+  window.GR.voice = voiceCommand;
   window.GR.mid = f => { const r = results[sel]; const i = r.path[Math.floor(r.path.length * (f || 0.5))]; return [G.lat[i], G.lon[i]]; };
   window.GR.report = (ty, la, lo) => postReport(ty, la, lo);
   window.GR.pos = (la, lo) => onPos({ coords: { latitude: la, longitude: lo, accuracy: 10 } });

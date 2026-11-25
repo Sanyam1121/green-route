@@ -1,6 +1,17 @@
 /* Green Route translations: English, Hindi, Punjabi. Values are strings with {vars} or functions of vars. */
 var I18N = (function () {
   const en = {
+    cycle: '🚲 Cycle', walk: '🚶 Walk', pct_lanes: '{n}% through lanes and paths',
+    nearest: 'Nearest', none_nearby: 'None of these mapped nearby yet',
+    listening: 'Listening… speak now', voice_examples: 'Try: “Model Town jana hai”, “ghar le chalo”, “nearest petrol pump”',
+    voice_going: 'Route to {p}', voice_no_place: 'Could not find “{q}”. Try another name.', voice_save_first: 'Save your {p} first: plan a trip there and tap Save.',
+    voice_not_understood: 'Sorry, I did not catch a place. Try again.', voice_unsupported: 'Voice search needs Chrome on Android or a desktop browser that supports it.',
+    voice_no_speech: 'Did not hear anything. Tap 🎤 and speak.', mic_denied: 'Allow the microphone to use voice search.',
+    ty_fuel: 'Petrol pump', ty_ev: 'EV charging', ty_hospital: 'Hospital', ty_clinic: 'Clinic', ty_pharmacy: 'Chemist', ty_atm: 'ATM', ty_bank: 'Bank',
+    ty_school: 'School', ty_college: 'College', ty_restaurant: 'Restaurant', ty_cafe: 'Cafe / sweets', ty_hotel: 'Hotel', ty_police: 'Police',
+    ty_bus: 'Bus stand', ty_train: 'Railway station', ty_cinema: 'Cinema', ty_market: 'Market', ty_park: 'Park', ty_sport: 'Gym / sports',
+    ty_govt: 'Government office', ty_area: 'Area', ty_road: 'Road', ty_shop: 'Shop', ty_sight: 'Landmark', ty_office: 'Office',
+    ty_temple: 'Mandir', ty_gurdwara: 'Gurdwara', ty_mosque: 'Masjid', ty_church: 'Church', ty_other: 'Place',
     title: 'Green Route', from_ph: 'From: search or tap map', to_ph: 'To: where are you going?',
     car: '🚗 Car', bike: '🛵 Bike', traffic_lbl: 'Traffic',
     tr_light: 'light', tr_normal: 'normal', tr_heavy: 'heavy', tr_light_cap: 'Light', tr_normal_cap: 'Normal', tr_heavy_cap: 'Heavy', auto_tr: 'Auto: {t}',
@@ -66,6 +77,17 @@ var I18N = (function () {
   };
 
   const hi = {
+    cycle: '🚲 साइकिल', walk: '🚶 पैदल', pct_lanes: '{n}% गलियों और रास्तों से',
+    nearest: 'सबसे पास', none_nearby: 'पास में ऐसी कोई जगह मैप में नहीं है',
+    listening: 'सुन रहे हैं… अब बोलें', voice_examples: 'जैसे: “मॉडल टाउन जाना है”, “घर ले चलो”, “पास का पेट्रोल पंप”',
+    voice_going: '{p} का रास्ता', voice_no_place: '“{q}” नहीं मिला। कोई और नाम बोलें।', voice_save_first: 'पहले अपना {p} सेव करें: वहाँ का रास्ता बनाकर सेव दबाएँ।',
+    voice_not_understood: 'माफ़ कीजिए, जगह समझ नहीं आई। फिर से बोलें।', voice_unsupported: 'आवाज़ से खोज के लिए Android पर Chrome चाहिए।',
+    voice_no_speech: 'कुछ सुनाई नहीं दिया। 🎤 दबाकर बोलें।', mic_denied: 'आवाज़ से खोज के लिए माइक की अनुमति दें।',
+    ty_fuel: 'पेट्रोल पंप', ty_ev: 'EV चार्जिंग', ty_hospital: 'अस्पताल', ty_clinic: 'क्लिनिक', ty_pharmacy: 'केमिस्ट', ty_atm: 'ATM', ty_bank: 'बैंक',
+    ty_school: 'स्कूल', ty_college: 'कॉलेज', ty_restaurant: 'रेस्टोरेंट', ty_cafe: 'कैफ़े / मिठाई', ty_hotel: 'होटल', ty_police: 'पुलिस',
+    ty_bus: 'बस स्टैंड', ty_train: 'रेलवे स्टेशन', ty_cinema: 'सिनेमा', ty_market: 'बाज़ार', ty_park: 'पार्क', ty_sport: 'जिम / खेल',
+    ty_govt: 'सरकारी दफ़्तर', ty_area: 'इलाका', ty_road: 'सड़क', ty_shop: 'दुकान', ty_sight: 'लैंडमार्क', ty_office: 'ऑफ़िस',
+    ty_temple: 'मंदिर', ty_gurdwara: 'गुरुद्वारा', ty_mosque: 'मस्जिद', ty_church: 'चर्च', ty_other: 'जगह',
     from_ph: 'कहाँ से: खोजें या मैप पर टैप करें', to_ph: 'कहाँ जाना है?',
     car: '🚗 कार', bike: '🛵 बाइक', traffic_lbl: 'ट्रैफ़िक',
     tr_light: 'कम', tr_normal: 'सामान्य', tr_heavy: 'ज़्यादा', tr_light_cap: 'कम', tr_normal_cap: 'सामान्य', tr_heavy_cap: 'ज़्यादा', auto_tr: 'ऑटो: {t}',
@@ -131,6 +153,17 @@ var I18N = (function () {
   };
 
   const pa = {
+    cycle: '🚲 ਸਾਈਕਲ', walk: '🚶 ਪੈਦਲ', pct_lanes: '{n}% ਗਲੀਆਂ ਅਤੇ ਰਸਤਿਆਂ ਰਾਹੀਂ',
+    nearest: 'ਸਭ ਤੋਂ ਨੇੜੇ', none_nearby: 'ਨੇੜੇ ਅਜਿਹੀ ਕੋਈ ਥਾਂ ਨਕਸ਼ੇ ਵਿੱਚ ਨਹੀਂ',
+    listening: 'ਸੁਣ ਰਹੇ ਹਾਂ… ਹੁਣ ਬੋਲੋ', voice_examples: 'ਜਿਵੇਂ: “ਮਾਡਲ ਟਾਊਨ ਜਾਣਾ ਹੈ”, “ਘਰ ਲੈ ਚੱਲੋ”, “ਨੇੜੇ ਦਾ ਪੈਟਰੋਲ ਪੰਪ”',
+    voice_going: '{p} ਦਾ ਰਸਤਾ', voice_no_place: '“{q}” ਨਹੀਂ ਮਿਲਿਆ। ਕੋਈ ਹੋਰ ਨਾਂ ਬੋਲੋ।', voice_save_first: 'ਪਹਿਲਾਂ ਆਪਣਾ {p} ਸੇਵ ਕਰੋ: ਉੱਥੇ ਦਾ ਰਸਤਾ ਬਣਾ ਕੇ ਸੇਵ ਦਬਾਓ।',
+    voice_not_understood: 'ਮਾਫ਼ ਕਰਨਾ, ਥਾਂ ਸਮਝ ਨਹੀਂ ਆਈ। ਫਿਰ ਬੋਲੋ।', voice_unsupported: 'ਆਵਾਜ਼ ਨਾਲ ਖੋਜ ਲਈ Android ਤੇ Chrome ਚਾਹੀਦਾ ਹੈ।',
+    voice_no_speech: 'ਕੁਝ ਸੁਣਾਈ ਨਹੀਂ ਦਿੱਤਾ। 🎤 ਦਬਾ ਕੇ ਬੋਲੋ।', mic_denied: 'ਆਵਾਜ਼ ਨਾਲ ਖੋਜ ਲਈ ਮਾਈਕ ਦੀ ਇਜਾਜ਼ਤ ਦਿਓ।',
+    ty_fuel: 'ਪੈਟਰੋਲ ਪੰਪ', ty_ev: 'EV ਚਾਰਜਿੰਗ', ty_hospital: 'ਹਸਪਤਾਲ', ty_clinic: 'ਕਲੀਨਿਕ', ty_pharmacy: 'ਕੈਮਿਸਟ', ty_atm: 'ATM', ty_bank: 'ਬੈਂਕ',
+    ty_school: 'ਸਕੂਲ', ty_college: 'ਕਾਲਜ', ty_restaurant: 'ਰੈਸਟੋਰੈਂਟ', ty_cafe: 'ਕੈਫ਼ੇ / ਮਿਠਾਈ', ty_hotel: 'ਹੋਟਲ', ty_police: 'ਪੁਲਿਸ',
+    ty_bus: 'ਬੱਸ ਅੱਡਾ', ty_train: 'ਰੇਲਵੇ ਸਟੇਸ਼ਨ', ty_cinema: 'ਸਿਨੇਮਾ', ty_market: 'ਬਾਜ਼ਾਰ', ty_park: 'ਪਾਰਕ', ty_sport: 'ਜਿਮ / ਖੇਡ',
+    ty_govt: 'ਸਰਕਾਰੀ ਦਫ਼ਤਰ', ty_area: 'ਇਲਾਕਾ', ty_road: 'ਸੜਕ', ty_shop: 'ਦੁਕਾਨ', ty_sight: 'ਨਿਸ਼ਾਨੀ', ty_office: 'ਦਫ਼ਤਰ',
+    ty_temple: 'ਮੰਦਰ', ty_gurdwara: 'ਗੁਰਦੁਆਰਾ', ty_mosque: 'ਮਸਜਿਦ', ty_church: 'ਚਰਚ', ty_other: 'ਥਾਂ',
     from_ph: 'ਕਿੱਥੋਂ: ਲੱਭੋ ਜਾਂ ਨਕਸ਼ੇ ਤੇ ਟੈਪ ਕਰੋ', to_ph: 'ਕਿੱਥੇ ਜਾਣਾ ਹੈ?',
     car: '🚗 ਕਾਰ', bike: '🛵 ਬਾਈਕ', traffic_lbl: 'ਟ੍ਰੈਫ਼ਿਕ',
     tr_light: 'ਘੱਟ', tr_normal: 'ਆਮ', tr_heavy: 'ਜ਼ਿਆਦਾ', tr_light_cap: 'ਘੱਟ', tr_normal_cap: 'ਆਮ', tr_heavy_cap: 'ਜ਼ਿਆਦਾ', auto_tr: 'ਆਟੋ: {t}',
