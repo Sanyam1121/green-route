@@ -48,6 +48,7 @@ function chowkName(text) {
     while (i >= 0 && keep.length < 4) { const w = words[i].replace(/[.']/g, ''); if (STOP.has(w.toLowerCase())) { if (keep.length) break; i--; continue; } keep.unshift(words[i]); i--; }
     while (keep.length > 1 && /^[#\d]/.test(keep[0])) keep.shift(); // "329 Basti Adda" → "Basti Adda"
     if (!keep.length || keep.join('').length < 2 || /^\d+$/.test(keep.join(''))) continue;
+    if (/^(service|road|main|gt|t|national|state|highway|link)$/i.test(keep.join(' ')) || /\b(road|marg|highway|bypass|junction)$/i.test(keep.join(' '))) continue;
     const keep3 = keep.slice(-3);
     while (keep3.length > 1 && /^[#\d]/.test(keep3[0])) keep3.shift();
     const base = keep3.map(w => ((/^[A-Z]{2,3}$/.test(w)) || (w.length <= 4 && /^[a-z]+$/i.test(w) && !/[aeiou]/i.test(w))) ? w.toUpperCase() : w.charAt(0).toUpperCase() + w.slice(1).toLowerCase()).join(' ');
@@ -95,7 +96,9 @@ async function city(name, [s, w, n, e]) {
       const j = juncs.find(x => hav(la, lo, x.la, x.lo) < 90);
       if (j) j.kind = 'r'; else juncs.push({ la, lo, n: 1, main: 1, kind: 'r', names: new Map() });
     }
-    const nm = t.name && (CHOWK.test(t.name) ? chowkName(t.name) || t.name : (t.junction ? t.name + ' Chowk' : null));
+    // a roundabout/junction carrying a road's name ("GT Road; Sher Shah Suri Marg") is not a chowk name
+    const roadLike = /road|marg|highway|\bnh\b|\bsh\b|bypass|service|flyover|bridge|junction|street|[;\-–]/i;
+    const nm = t.name && (CHOWK.test(t.name) ? chowkName(t.name) : (t.junction && !roadLike.test(t.name) ? t.name + ' Chowk' : null));
     if (nm) mentions.push([nm, la, lo, t.junction || t.highway ? 5 : 3]);
   }
   // 3. chowk names inside place names and addresses (OSM + Overture)
