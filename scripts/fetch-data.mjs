@@ -12,13 +12,13 @@ const ENDPOINTS = [
   'https://maps.mail.ru/osm/tools/overpass/api/interpreter',
   'https://overpass.private.coffee/api/interpreter',
 ];
-const HW = 'motorway|trunk|primary|secondary|tertiary|unclassified|residential|living_street|motorway_link|trunk_link|primary_link|secondary_link|tertiary_link';
+const HW = 'motorway|trunk|primary|secondary|tertiary|unclassified|residential|living_street|service|road|motorway_link|trunk_link|primary_link|secondary_link|tertiary_link';
 const HWCODE = HW.split('|');
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 
 function query(bb) {
   const b = bb.map(x => x.toFixed(4)).join(',');
-  return `[out:json][timeout:180];way["highway"~"^(${HW})$"]["access"!~"^(private|no)$"]["area"!="yes"](${b})->.r;.r out body qt;node(w.r);out skel qt;(node["highway"="traffic_signals"](${b});node["crossing"="traffic_signals"](${b}););out body qt;`;
+  return `[out:json][timeout:180];way["highway"~"^(${HW})$"]["access"!~"^(private|no)$"]["motor_vehicle"!="no"]["area"!="yes"]["service"!~"^(parking_aisle|driveway|drive-through|emergency_access)$"](${b})->.r;.r out body qt;node(w.r);out skel qt;(node["highway"="traffic_signals"](${b});node["crossing"="traffic_signals"](${b}););out body qt;`;
 }
 
 async function overpass(q) {
