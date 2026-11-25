@@ -478,35 +478,59 @@ async function share(){
   catch(e){location.href='https://wa.me/?text='+encodeURIComponent(text+'\n'+url);}
 }
 
-/* ---------- search (Photon, OpenStreetMap-based, allows type-ahead) ---------- */
+/* ---------- search: Photon (type-ahead) + Nominatim (after a pause), Jalandhar first ---------- */
+const ROMAN={1:'i',2:'ii',3:'iii',4:'iv',5:'v',6:'vi',7:'vii',8:'viii',9:'ix',10:'x'};
+function variants(q){
+  const base=q.replace(/[,\s]*(jalandhar|jullundur)(\s*city)?\s*$/i,'').trim()||q;
+  const rom=base.replace(/\b(phase|ph|sector|block)\s*\.?\s*(\d{1,2})\b/gi,(m,w,n)=>`${w} ${ROMAN[n]||n}`);
+  const noNum=base.replace(/\b(phase|ph)\s*\.?\s*(\d{1,2}|[ivx]+)\b/gi,'').replace(/\s+/g,' ').trim();
+  return [...new Set([base,rom,noNum].filter(x=>x&&x.length>1))];
+}
+const distC=(la,lo)=>Core.hav(la,lo,CENTER[0],CENTER[1]);
 function setupSearch(which){
-  const inp=$('q'+which),drop=$('d'+which);let timer,ctl,items=[];
+  const inp=$('q'+which),drop=$('d'+which);let t1,t2,ctl,items=[],seq=0;
   const show=html=>{drop.innerHTML=html;drop.hidden=!html;};
   const pick=i=>{const it=items[i];if(!it)return;show('');inp.blur();setPoint(which,[it.lat,it.lon],it.name);map.panTo([it.lat,it.lon]);};
   const locBtn=which==='A'?'<button class="loc" data-loc="1">◎ Use my current location</button>':'';
+  const draw=()=>{show(items.length?items.slice(0,7).map((it,i)=>`<button data-i="${i}"><b>${esc(it.name)}</b><small>${esc(it.sub)}</small></button>`).join(''):'<button disabled><small>Searching…</small></button>');};
+  const add=list=>{
+    for(const it of list){
+      if(distC(it.lat,it.lon)>40000)continue;
+      if(items.some(x=>x.name===it.name&&Core.hav(x.lat,x.lon,it.lat,it.lon)<300))continue;
+      items.push(it);
+    }
+    // places in Jalandhar city (within ~9 km of the centre) first, keep search order otherwise
+    items=items.map((x,k)=>({x,k,f:distC(x.lat,x.lon)<9000?0:1})).sort((a,b)=>a.f-b.f||a.k-b.k).map(o=>o.x);
+  };
+  async function photon(q,sig){
+    const j=await (await fetch(`https://photon.komoot.io/api/?q=${encodeURIComponent(q)}&lat=${CENTER[0]}&lon=${CENTER[1]}&limit=6&lang=en&bbox=75.3,31.1,75.85,31.55`,{signal:sig})).json();
+    return j.features.map(f=>{const p=f.properties;const sub=[p.street,p.district||p.locality,p.city||p.county].filter(Boolean).filter((v,i,a)=>a.indexOf(v)===i&&v!==p.name).join(', ');return {name:p.name||p.street||'Place',sub,lat:f.geometry.coordinates[1],lon:f.geometry.coordinates[0]};});
+  }
+  async function nominatim(q,sig){
+    const n=await (await fetch(`https://nominatim.openstreetmap.org/search?format=json&limit=6&countrycodes=in&bounded=1&viewbox=75.3,31.55,75.85,31.1&q=${encodeURIComponent(q)}`,{signal:sig})).json();
+    return n.map(x=>{const parts=x.display_name.split(',').map(s=>s.trim());return {name:parts[0],sub:parts.slice(1,4).join(', '),lat:+x.lat,lon:+x.lon};});
+  }
   inp.addEventListener('focus',()=>{inp.select();if(!inp.value||inp.value==='Pinned spot'||inp.value==='My location')show(locBtn);});
   inp.addEventListener('blur',()=>setTimeout(()=>show(''),200));
   inp.addEventListener('input',()=>{
-    clearTimeout(timer);const q=inp.value.trim();
+    clearTimeout(t1);clearTimeout(t2);const q=inp.value.trim();
     if(q.length<2){show(locBtn);return;}
-    timer=setTimeout(async()=>{
-      try{
-        if(ctl)ctl.abort();ctl=new AbortController();
-        const qq=q.replace(/,?\s*jalandhar\s*$/i,'')||q;const r=await fetch(`https://photon.komoot.io/api/?q=${encodeURIComponent(qq)}&lat=${CENTER[0]}&lon=${CENTER[1]}&limit=6&lang=en&bbox=75.25,31.05,75.95,31.6`,{signal:ctl.signal});
-        const j=await r.json();
-        let feats=j.features;
-        if(!feats.length){ // backup: Nominatim, strictly inside the Jalandhar area
-          const n=await (await fetch(`https://nominatim.openstreetmap.org/search?format=json&limit=6&countrycodes=in&bounded=1&viewbox=75.25,31.6,75.95,31.05&q=${encodeURIComponent(q.replace(/,?\s*jalandhar\s*$/i,''))}`,{signal:ctl.signal})).json();
-          feats=n.map(x=>({properties:{name:x.display_name.split(',')[0],street:x.display_name.split(',').slice(1,3).join(',').trim()},geometry:{coordinates:[+x.lon,+x.lat]}}));
-        }
-        items=feats.map(f=>{const p=f.properties;const sub=[p.street,p.district||p.locality,p.city||p.county].filter(Boolean).filter((v,i,a)=>a.indexOf(v)===i&&v!==p.name).join(', ');return {name:p.name||p.street||'Place',sub,lat:f.geometry.coordinates[1],lon:f.geometry.coordinates[0]};});
-        show(items.length?items.map((it,i)=>`<button data-i="${i}"><b>${esc(it.name)}</b><small>${esc(it.sub)}</small></button>`).join(''):'<button disabled><small>No places found. Try another name or tap the map.</small></button>');
-      }catch(e){if(e.name!=='AbortError')show('<button disabled><small>Search is not available right now. Tap the map instead.</small></button>');}
+    const my=++seq;
+    t1=setTimeout(async()=>{
+      if(ctl)ctl.abort();ctl=new AbortController();const sig=ctl.signal;items=[];
+      const vs=variants(q);
+      await Promise.all(vs.map(v=>photon(v,sig).then(r=>{if(my===seq){add(r);draw();}}).catch(()=>{})));
+      if(my!==seq)return;
+      // one Nominatim lookup after the user pauses (its rules allow 1 request per second)
+      t2=setTimeout(async()=>{
+        try{const r=await nominatim(vs[1]||vs[0],sig);if(my===seq){add(r);if(!r.length&&vs[2]&&vs[2]!==vs[0])add(await nominatim(vs[2],sig));}}catch(e){}
+        if(my===seq){if(items.length)draw();else show('<button disabled><small>No places found. Try a nearby landmark, or tap the map.</small></button>');}
+      },items.length?900:500);
     },250);
   });
   inp.addEventListener('keydown',e=>{if(e.key==='Enter'){e.preventDefault();pick(0);}if(e.key==='Escape')show('');});
   drop.addEventListener('pointerdown',e=>e.preventDefault());
-  drop.addEventListener('click',e=>{const b=e.target.closest('button');if(!b)return;if(b.dataset.loc){show('');inp.blur();locate(true);}else pick(+b.dataset.i);});
+  drop.addEventListener('click',e=>{const b=e.target.closest('button');if(!b||b.disabled)return;if(b.dataset.loc){show('');inp.blur();locate(true);}else pick(+b.dataset.i);});
 }
 setupSearch('A');setupSearch('B');
 
