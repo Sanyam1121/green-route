@@ -76,12 +76,24 @@ def main():
     path = f"s3://overturemaps-us-west-2/release/{rel}/theme=places/type=place/*.parquet"
     boxes = " OR ".join(
         f"(bbox.xmin BETWEEN {w} AND {e} AND bbox.ymin BETWEEN {s} AND {n})" for s, w, n, e in CITIES.values())
+    cols = {r[0]: r[1] for r in con.sql(f"DESCRIBE SELECT * FROM read_parquet('{path}') LIMIT 1").fetchall()}
+    print("columns:", ", ".join(sorted(cols)))
+    if "basic_category" in cols:
+        cat_expr = "basic_category"
+    elif "taxonomy" in cols:
+        cat_expr = "taxonomy.primary"
+    elif "categories" in cols:
+        cat_expr = "categories.primary"
+    else:
+        cat_expr = "NULL"
+    addr_expr = "addresses[1].freeform" if "addresses" in cols else "NULL"
+    conf_expr = "confidence" if "confidence" in cols else "1.0"
     rows = con.sql(f"""
-        SELECT names.primary AS name, categories.primary AS cat, confidence,
+        SELECT names.primary AS name, {cat_expr} AS cat, {conf_expr} AS confidence,
                (bbox.xmin + bbox.xmax) / 2 AS lon, (bbox.ymin + bbox.ymax) / 2 AS lat,
-               addresses[1].freeform AS addr
+               {addr_expr} AS addr
         FROM read_parquet('{path}')
-        WHERE ({boxes}) AND confidence >= {MIN_CONFIDENCE} AND names.primary IS NOT NULL
+        WHERE ({boxes}) AND {conf_expr} >= {MIN_CONFIDENCE} AND names.primary IS NOT NULL
     """).fetchall()
     print("rows in city boxes:", len(rows))
 
