@@ -35,6 +35,9 @@ jobs:
       - name: Estimate street widths (roads changed, so widths must be redone)
         continue-on-error: true
         run: pip install shapely numpy pyarrow && python scripts/lane_widths.py
+      - name: Find and name every chowk
+        continue-on-error: true
+        run: node scripts/chowks.mjs
       - name: Commit data if it changed
         if: always()
         run: |
