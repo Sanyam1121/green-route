@@ -5,7 +5,7 @@ Entries keep the app's format [name, lat, lon, type, altNames, street] plus an 7
 that marks Overture rows, so a re-run replaces them without touching OpenStreetMap rows.
 Run by GitHub Actions: python scripts/overture_places.py
 """
-import json, os, re, sys, math
+import json, os, re, sys, math, subprocess
 import duckdb
 
 CITIES = {
@@ -60,24 +60,14 @@ def dist_m(a1, o1, a2, o2):
     return math.hypot(dx, dy)
 
 
-def latest_release(con):
-    files = con.sql("SELECT file FROM glob('s3://overturemaps-us-west-2/release/*/theme=places/type=place/*.parquet')").fetchall()
-    rels = sorted({re.search(r"release/([^/]+)/", f[0]).group(1) for f in files})
-    if not rels:
-        raise SystemExit("No Overture releases found")
-    return rels[-1]
-
-
-def main():
+def fetch_city_rows(city, box):
+    """Download one city's places with the official `overturemaps` tool (reads only the needed parts)."""
+    s, w, n, e = box
+    out = f"/tmp/overture-{city}.parquet"
+    subprocess.run(["overturemaps", "download", f"--bbox={w},{s},{e},{n}", "-f", "geoparquet", "--type=place", "-o", out], check=True)
     con = duckdb.connect()
-    con.sql("INSTALL httpfs; LOAD httpfs; SET s3_region='us-west-2';")
-    rel = os.environ.get("OVERTURE_RELEASE") or latest_release(con)
-    print("Overture release:", rel)
-    path = f"s3://overturemaps-us-west-2/release/{rel}/theme=places/type=place/*.parquet"
-    boxes = " OR ".join(
-        f"(bbox.xmin BETWEEN {w} AND {e} AND bbox.ymin BETWEEN {s} AND {n})" for s, w, n, e in CITIES.values())
-    cols = {r[0]: r[1] for r in con.sql(f"DESCRIBE SELECT * FROM read_parquet('{path}') LIMIT 1").fetchall()}
-    print("columns:", ", ".join(sorted(cols)))
+    cols = {r[0]: r[1] for r in con.sql(f"DESCRIBE SELECT * FROM read_parquet('{out}') LIMIT 1").fetchall()}
+    print(f"{city} columns:", ", ".join(sorted(cols)))
     if "basic_category" in cols:
         cat_expr = "basic_category"
     elif "taxonomy" in cols:
@@ -90,13 +80,16 @@ def main():
     conf_expr = "confidence" if "confidence" in cols else "1.0"
     rows = con.sql(f"""
         SELECT names.primary AS name, {cat_expr} AS cat, {conf_expr} AS confidence,
-               (bbox.xmin + bbox.xmax) / 2 AS lon, (bbox.ymin + bbox.ymax) / 2 AS lat,
-               {addr_expr} AS addr
-        FROM read_parquet('{path}')
-        WHERE ({boxes}) AND {conf_expr} >= {MIN_CONFIDENCE} AND names.primary IS NOT NULL
+               (bbox.xmin + bbox.xmax) / 2 AS lon, (bbox.ymin + bbox.ymax) / 2 AS lat, {addr_expr} AS addr
+        FROM read_parquet('{out}')
+        WHERE {conf_expr} >= {MIN_CONFIDENCE} AND names.primary IS NOT NULL
     """).fetchall()
-    print("rows in city boxes:", len(rows))
+    print(f"{city}: {len(rows)} Overture places in the box")
+    return rows
 
+
+def main():
+    rel = "latest"
     for city, (s, w, n, e) in CITIES.items():
         fn = f"data/v3/{city}-places.json"
         try:
@@ -108,6 +101,11 @@ def main():
         def cell(la, lo): return (round(la * 500), round(lo * 500))  # ~220 m cells
         for p in osm:
             grid.setdefault(cell(p[1], p[2]), []).append((norm(p[0]), p[1], p[2]))
+        try:
+            rows = fetch_city_rows(city, (s, w, n, e))
+        except Exception as ex:
+            print(f'{city}: Overture download failed: {ex}')
+            continue
         mine = [r for r in rows if s <= r[4] <= n and w <= r[3] <= e]
         mine.sort(key=lambda r: -(r[2] or 0))
         added = []
