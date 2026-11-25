@@ -224,7 +224,8 @@ let fixes={add:[],del:[]},dataNote='',shared={add:[],del:[]};
 function fromCompact(c){const els=[],N=c.n.length/2;for(let i=0;i<N;i++)els.push({type:'node',id:i,lat:c.n[2*i]/1e6,lon:c.n[2*i+1]/1e6});for(const s of c.s)els.push({type:'node',id:s,lat:c.n[2*s]/1e6,lon:c.n[2*s+1]/1e6,tags:{highway:'traffic_signals'}});for(const w of c.w)els.push({type:'way',nodes:w.slice(2),tags:{highway:c.hw[w[0]]||'residential',oneway:w[1]===1?'yes':w[1]===-1?'-1':'no'}});return els;}
 try{fixes=JSON.parse(localStorage.getItem('gr-fixes'))||fixes;}catch(e){}
 
-const map=L.map('map',{preferCanvas:true,zoomControl:true}).fitBounds([[DEF[0],DEF[1]],[DEF[2],DEF[3]]]);
+const map=L.map('map',{preferCanvas:true,zoomControl:true}).setView([31.325,75.585],13);
+let sized=false;const mro=new ResizeObserver(()=>{map.invalidateSize();if(!sized&&map.getSize().x>50){sized=true;map.setView([31.325,75.585],13);}});mro.observe(document.getElementById('map'));
 L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png',{maxZoom:19,attribution:'&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'}).addTo(map);
 const sigLayer=L.layerGroup().addTo(map),routeLayer=L.layerGroup().addTo(map);
 const pin=c=>L.divIcon({className:'',html:`<div style="width:22px;height:22px;border-radius:50%;background:${c};border:3px solid #fff;box-shadow:0 1px 4px #0006"></div>`,iconSize:[22,22],iconAnchor:[11,11]});
