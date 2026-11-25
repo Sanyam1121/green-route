@@ -38,6 +38,13 @@ CAT_RULES = [
     (("government", "post_office", "courthouse", "city_hall", "town_hall", "passport", "public_service"), "govt"),
     (("landmark", "monument", "museum", "historic", "tourist"), "sight"),
     (("office", "agency", "consult", "insurance", "real_estate", "lawyer", "accountant"), "office"),
+    (("outpatient", "surgery", "physical_medicine", "reproductive", "wellness", "alternative_medicine", "physiotherap", "ayurved", "homeopath"), "clinic"),
+    (("educational", "education", "place_of_learning", "campus", "research_institute", "training"), "school"),
+    (("casual_eatery", "eatery", "bar", "pub", "lounge", "catering"), "cafe"),
+    (("financial_service", "travel_service", "professional_service", "attorney", "law_firm", "b2b", "manufacturer", "wholesaler", "supplier",
+      "media_service", "design_service", "technical_service", "telecommunications", "printing", "building_or_construction", "event_or_party",
+      "social_or_community", "travel_and_transportation", "taxi", "transportation_and_storage"), "office"),
+    (("automotive", "home_service", "laundry", "animal", "pet_"), "shop"),
     (("store", "shop", "retail", "boutique", "dealer", "showroom", "supermarket", "grocery", "mobile_phone", "electronics", "clothing", "jewelry", "hardware", "furniture", "salon", "beauty", "repair", "tailor", "optician", "book"), "shop"),
 ]
 
