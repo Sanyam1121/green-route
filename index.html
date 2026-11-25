@@ -55,11 +55,20 @@ button.on{background:var(--amber);border-color:var(--amber);color:#1b1e21}
 .hero a,.hero button{display:flex;align-items:center;justify-content:center;min-height:48px;border-radius:12px;font-weight:800;text-decoration:none;border:0}
 .hero a{background:#fff;color:#14663a}
 .hero button{background:#ffffff26;color:#fff;padding:0 16px}
-.alts{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:6px}
+.alts{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:6px}
+.opts{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:6px}
+.trsel{display:flex;align-items:center;gap:6px;background:var(--card);border:1px solid var(--line);border-radius:12px;padding:0 4px 0 12px;font-size:14px;font-weight:600}
+.trsel span{color:var(--mute);font-weight:400}
+.trsel select{flex:1;font:inherit;font-size:16px;font-weight:600;border:0;background:transparent;color:var(--ink);min-height:44px}
+.hero .g{font-size:13px;font-weight:600;background:#ffffff26;border-radius:999px;padding:3px 10px;align-self:flex-start}
+.seg{display:flex;background:var(--card);border:1px solid var(--line);border-radius:12px;padding:3px;gap:3px}
+.seg button{flex:1;border:0;min-height:38px;padding:0 6px;font-size:14px;border-radius:9px;background:transparent;white-space:nowrap}
+.seg button.on{background:var(--ink);color:var(--bg)}
+.seg small{font-weight:400;opacity:.8}
 .alt{display:flex;flex-direction:column;align-items:flex-start;text-align:left;padding:8px 10px;min-height:64px;border-width:2px}
 .alt.sel{border-color:var(--ink)}
 .alt i{width:24px;height:4px;border-radius:2px;margin-bottom:4px}
-.alt b{font-size:14px;line-height:1.2}.alt span{font-size:12px;color:var(--mute);font-weight:400;white-space:nowrap}
+.alt b{font-size:13px;line-height:1.2}.alt span{font-size:12px;color:var(--mute);font-weight:400;line-height:1.3}
 #status{font-size:13px;color:var(--mute)}
 #status.err{color:var(--red)}
 details{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:0 12px}
@@ -95,7 +104,9 @@ details[open]{padding-bottom:12px}
   h1,.legend{display:none}
   .phone-legend{display:flex!important}
   .alt{min-height:54px;padding:6px 8px}
-  .hero{padding:12px 14px;gap:8px}
+  .hero{padding:12px 14px;gap:6px}
+  .hero .why{font-size:13px}
+  .hero a,.hero button{min-height:44px}
   .hero .t{font-size:32px}
   .fab{bottom:auto;top:70px}
   .hint{top:calc(10px + env(safe-area-inset-top))}
@@ -118,6 +129,10 @@ details[open]{padding-bottom:12px}
     <button class="ib" id="swap" title="Swap" aria-label="Swap start and end">⇅</button>
   </div>
 
+  <div class="opts">
+    <div class="seg" id="vehSeg" role="group" aria-label="Vehicle"><button data-v="car">🚗 Car</button><button data-v="bike">🛵 Bike</button></div>
+    <label class="trsel"><span>Traffic</span><select id="trSel" aria-label="Main-road traffic"><option value="auto">Auto</option><option value="light">Light</option><option value="normal">Normal</option><option value="heavy">Heavy</option></select></label>
+  </div>
   <div id="result"></div>
   <div id="status">Loading Jalandhar map…</div>
 
@@ -161,9 +176,10 @@ details[open]{padding-bottom:12px}
 <script id="core">
 /* ---------- routing core (no DOM) ---------- */
 var Core = (function(){
-  const SPEED={motorway:60,trunk:45,primary:35,secondary:30,tertiary:25,unclassified:20,residential:15,living_street:8};
+  // road classes; 0-4 are main roads, 5-9 are small streets / galiyan
+  const CLASSES=['motorway','trunk','primary','secondary','tertiary','unclassified','residential','living_street','service','road'];
   const RANK={motorway:4,trunk:4,primary:3,secondary:2,tertiary:1};
-  const spd=h=>(SPEED[(h||'').replace('_link','')]||15)/3.6;
+  const cls=h=>{const i=CLASSES.indexOf((h||'').replace('_link',''));return i<0?6:i;};
   const R=6371000,rad=Math.PI/180;
   function hav(a1,o1,a2,o2){const dA=(a2-a1)*rad,dO=(o2-o1)*rad;const x=Math.sin(dA/2)**2+Math.cos(a1*rad)*Math.cos(a2*rad)*Math.sin(dO/2)**2;return 2*R*Math.asin(Math.sqrt(x));}
   function bearing(a1,o1,a2,o2){return Math.atan2((o2-o1)*Math.cos(a1*rad),a2-a1)/rad;}
@@ -183,7 +199,7 @@ var Core = (function(){
     const find=x=>{while(par[x]!==x){par[x]=par[par[x]];x=par[x];}return x;};
     const link=(a,b,r)=>{const m=nb[a]||(nb[a]=new Map());if((m.get(b)??-1)<r)m.set(b,r);};
     for(const w of ways){
-      const t=w.tags||{},h=t.highway,s=spd(h),ow=t.oneway,rk=RANK[h]||0;
+      const t=w.tags||{},h=t.highway,s=cls(h),ow=t.oneway,rk=RANK[h]||0;
       let dir=0;
       if(ow==='yes'||ow==='1'||ow==='true'||t.junction==='roundabout'||t.junction==='circular'||h==='motorway')dir=1;
       if(ow==='-1')dir=-1;
@@ -259,7 +275,7 @@ var Core = (function(){
   }
 
   // mode: 'short' (metres) | 'time' (seconds + P per red light)
-  function route(G,Z,src,dst,mode,P){
+  function route(G,Z,src,dst,mode,P,costSp,realSp){
     const N=G.N,dist=new Float64Array(N).fill(Infinity),prev=new Int32Array(N).fill(-1);
     const hn=[],hk=[];
     const push=(n,k)=>{let i=hn.length;hn.push(n);hk.push(k);while(i>0){const p=(i-1)>>1;if(hk[p]<=k)break;hn[i]=hn[p];hk[i]=hk[p];i=p;}hn[i]=n;hk[i]=k;};
@@ -273,7 +289,7 @@ var Core = (function(){
       const a=G.adj[u],zu=zone[u];
       for(let k=0;k<a.length;k+=3){
         const v=a[k],len=a[k+1];
-        let c=mode==='short'?len:len/a[k+2];
+        let c=mode==='short'?len:len/costSp[a[k+2]];
         const zv=zone[v];
         if(zv>=0&&zv!==zu)c+=mode==='short'?1:P;
         const nd=d0+c;
@@ -282,15 +298,15 @@ var Core = (function(){
     }
     if(dist[dst]===Infinity)return null;
     const path=[];for(let x=dst;x!==-1;x=prev[x])path.push(x);path.reverse();
-    let len=0,time=0;const hit=[];
+    let len=0,time=0,small=0;const hit=[];
     for(let k=0;k+1<path.length;k++){
       const u=path[k],v=path[k+1],a=G.adj[u];
-      for(let j=0;j<a.length;j+=3)if(a[j]===v){len+=a[j+1];time+=a[j+1]/a[j+2];break;}
+      for(let j=0;j<a.length;j+=3)if(a[j]===v){len+=a[j+1];time+=a[j+1]/realSp[a[j+2]];if(a[j+2]>=5)small+=a[j+1];break;}
       if(zone[v]>=0&&zone[v]!==zone[u]&&v!==dst)hit.push(zone[v]);
     }
-    return {path,len,time,signals:hit};
+    return {path,len,time,small,signals:hit};
   }
-  return {build,nearest,zones,route,hav};
+  return {build,nearest,zones,route,hav,CLASSES};
 })();
 if(typeof module!=='undefined')module.exports=Core;
 </script>
@@ -301,14 +317,27 @@ const $=id=>document.getElementById(id);
 const DEF=[31.27,75.52,31.38,75.65]; // Jalandhar s,w,n,e
 const CENTER=[31.325,75.585];
 const MODES={
-  best:{name:'Best route',short:'Best',color:'#1f9d55'},
-  short:{name:'Shortest',short:'Shortest',color:'#3a6fd8'},
-  few:{name:'Fewest red lights',short:'Fewest lights',color:'#8a4fd8'}
+  best:{name:'Best route',short:'Best',color:'#1f9d55',bg:'var(--green)'},
+  gali:{name:'Through galiyan',short:'Galiyan',color:'#e8590c',bg:'#c2410c'},
+  short:{name:'Shortest',short:'Shortest',color:'#3a6fd8',bg:'var(--blue)'},
+  few:{name:'Fewest red lights',short:'No lights',color:'#8a4fd8',bg:'#6a3fbf'}
 };
+// km/h by road class: motorway,trunk,primary,secondary,tertiary | unclassified,residential,living_street,service,road
+const BASE={car:[60,45,35,30,25,20,16,10,10,15],bike:[50,40,32,28,24,22,20,16,15,18]};
+// main-road slowdown by traffic level (classes 0-4); small streets are not slowed
+const TRAFFIC={light:[1,1,1,1,1],normal:[.9,.8,.8,.85,.9],heavy:[.7,.5,.5,.55,.7]};
+function autoTraffic(d=new Date()){const m=d.getHours()*60+d.getMinutes(),sun=d.getDay()===0;
+  if(m<7*60||m>=23*60)return 'light';
+  if(!sun&&((m>=8*60+30&&m<11*60)||(m>=17*60&&m<20*60+30)))return 'heavy';
+  return 'normal';}
+const trafficNow=()=>opt.traffic==='auto'?autoTraffic():opt.traffic;
+function speeds(galiBias){const b=BASE[opt.vehicle],t=TRAFFIC[trafficNow()];return b.map((v,i)=>v*(i<5?t[i]*(galiBias?0.55:1):1)/3.6);}
+let opt={vehicle:'car',traffic:'auto'};
 let G=null,Z=null,A=null,B=null,results={},sel='best',editMode=false,bbox=DEF,dataNote='';
 let fixes={add:[],del:[]},shared={add:[],del:[]};
 const store={get(k,d){try{const v=localStorage.getItem(k);return v==null?d:JSON.parse(v);}catch(e){return d;}},set(k,v){try{localStorage.setItem(k,JSON.stringify(v));}catch(e){}}};
 fixes=store.get('gr-fixes',fixes);
+opt=Object.assign(opt,store.get('gr-opt',{}));
 $('wait').value=store.get('gr-wait',45);$('wv').textContent=$('wait').value+' s';
 $('likely').checked=store.get('gr-likely',true);
 
@@ -340,7 +369,7 @@ async function loadArea(b){
   }
   if(!data){const c=await cacheGet(key);if(c&&Date.now()-c.t<7*864e5)data=c.d;}
   if(!data){
-    const q=`[out:json][timeout:120];way["highway"~"^(motorway|trunk|primary|secondary|tertiary|unclassified|residential|living_street|motorway_link|trunk_link|primary_link|secondary_link|tertiary_link)$"]["access"!~"^(private|no)$"]["area"!="yes"](${bb})->.r;.r out body qt;node(w.r);out skel qt;(node["highway"="traffic_signals"](${bb});node["crossing"="traffic_signals"](${bb}););out body qt;`;
+    const q=`[out:json][timeout:120];way["highway"~"^(motorway|trunk|primary|secondary|tertiary|unclassified|residential|living_street|service|road|motorway_link|trunk_link|primary_link|secondary_link|tertiary_link)$"]["access"!~"^(private|no)$"]["motor_vehicle"!="no"]["area"!="yes"]["service"!~"^(parking_aisle|driveway|drive-through|emergency_access)$"](${bb})->.r;.r out body qt;node(w.r);out skel qt;(node["highway"="traffic_signals"](${bb});node["crossing"="traffic_signals"](${bb}););out body qt;`;
     const eps=['https://maps.mail.ru/osm/tools/overpass/api/interpreter','https://overpass.private.coffee/api/interpreter','https://overpass.kumi.systems/api/interpreter','https://overpass-api.de/api/interpreter'];
     for(let round=0;round<2&&!data;round++)for(const ep of eps){
       try{
@@ -400,10 +429,10 @@ function go(){
   const s=Core.nearest(G,A.lat,A.lng,true),d=Core.nearest(G,B.lat,B.lng,true);
   if(!s||!d||s.m>800||d.m>800){status('That spot is outside the loaded area. Move the map there and use "Load roads for this map view" in Settings.',true);return;}
   if(s.i===d.i){status('Start and destination are the same spot.',true);return;}
-  const W=+$('wait').value;
-  const best=Core.route(G,Z,s.i,d.i,'time',W);
+  const W=+$('wait').value,sp=speeds(false),gsp=speeds(true);
+  const best=Core.route(G,Z,s.i,d.i,'time',W,sp,sp);
   if(!best){status('No drivable route found between these spots (one-way roads may block it).',true);return;}
-  results={best,short:Core.route(G,Z,s.i,d.i,'short',0),few:Core.route(G,Z,s.i,d.i,'time',900)};
+  results={best,gali:Core.route(G,Z,s.i,d.i,'time',W*1.5,gsp,sp),short:Core.route(G,Z,s.i,d.i,'short',0,sp,sp),few:Core.route(G,Z,s.i,d.i,'time',900,sp,sp)};
   if(!results[sel])sel='best';
   status('Tap another option to compare. Drag A or B to adjust.');
   updateHash();
@@ -414,6 +443,7 @@ function go(){
 
 const mins=r=>Math.max(1,Math.round((r.time+r.signals.length*+$('wait').value)/60));
 const km=r=>(r.len/1000).toFixed(r.len<10000?1:0);
+const galiPct=r=>Math.round(100*r.small/Math.max(1,r.len));
 const lights=n=>n===0?'no red lights':n===1?'1 red light':n+' red lights';
 
 function render(){
@@ -435,23 +465,28 @@ function render(){
     else if(ds>0)why=`Skips ${ds} red light${ds>1?'s':''} compared with the shortest way, for ${dk>0.05?dk.toFixed(1)+' km more':'about the same distance'}${dm>0?' and saves about '+dm+' min':dm<0?' (about '+(-dm)+' min slower)':''}.`;
     else why=`${dk>0.05?dk.toFixed(1)+' km longer than the shortest, but quicker':'Quickest option'}.`;
   }
+  if(sel==='gali'){const b=results.best,dm=mins(b)-mins(cur),ds=b.signals.length-cur.signals.length;
+    why=(ds>0?`${ds} fewer red light${ds>1?'s':''} than the best route`:cur.signals.length?`Same red lights as the best route`:`No red lights`)+(dm>0?`, about ${dm} min quicker.`:dm<0?`, about ${-dm} min slower.`:', about the same time.')+' Lanes can be narrow, go slow.';}
   const same={};for(const id of ids){const k=results[id].path.length+'|'+results[id].len.toFixed(0);same[id]=ids.find(j=>results[j].path.length+'|'+results[j].len.toFixed(0)===k);}
   $('result').innerHTML=`
-    <div class="hero" style="background:${sel==='best'?'var(--green)':sel==='short'?'var(--blue)':'#6a3fbf'}">
+    <div class="hero" style="background:${MODES[sel].bg}">
       <div class="k">${esc(MODES[sel].name)}${sel==='best'?' · recommended':''}</div>
       <div class="t">${mins(cur)} min<small>${km(cur)} km · ${lights(cur.signals.length)}</small></div>
+      <div class="g">${galiPct(cur)}% through galiyan</div>
       <div class="why">${esc(why)}</div>
       <div class="acts"><a id="nav" href="${navUrl(cur)}" target="_blank" rel="noopener">Start in Google Maps</a><button id="share">Share</button></div>
     </div>
-    <div class="alts">${ids.map(id=>{const r=results[id];const dup=same[id]!==id;return `<button class="alt${id===sel?' sel':''}" data-id="${id}"><i style="background:${MODES[id].color}"></i><b>${esc(MODES[id].short)}</b><span>${dup?'same as '+esc(MODES[same[id]].short):mins(r)+' min · '+r.signals.length+' 🚦'}</span></button>`;}).join('')}</div>`;
+    <div class="alts">${ids.map(id=>{const r=results[id];const dup=same[id]!==id;return `<button class="alt${id===sel?' sel':''}" data-id="${id}"><i style="background:${MODES[id].color}"></i><b>${esc(MODES[id].short)}</b><span>${dup?'same as '+esc(MODES[same[id]].short):mins(r)+' min · '+r.signals.length+(r.signals.length===1?' light':' lights')}</span></button>`;}).join('')}</div>`;
   for(const b of document.querySelectorAll('.alt'))b.onclick=()=>{sel=b.dataset.id;render();};
   $('share').onclick=share;
   $('panel').classList.remove('min');
 }
 
 function navUrl(r){
-  const p=r.path,n=Math.min(8,Math.max(0,Math.floor(r.len/700)));
-  const wp=[];for(let k=1;k<=n;k++){const i=p[Math.floor(k*(p.length-1)/(n+1))];wp.push(G.lat[i].toFixed(5)+','+G.lon[i].toFixed(5));}
+  const p=r.path,n=Math.min(8,Math.max(0,Math.floor(r.len/500)));
+  const smallIdx=[];for(let k=1;k<p.length-1;k++){const a=G.adj[p[k-1]];for(let j=0;j<a.length;j+=3)if(a[j]===p[k]){if(a[j+2]>=5)smallIdx.push(k);break;}}
+  const pool=smallIdx.length>=n?smallIdx:p.map((_,k)=>k).slice(1,-1);
+  const wp=[];for(let k=1;k<=n&&pool.length;k++){const i=p[pool[Math.floor(k*(pool.length-1)/(n+1))]];wp.push(G.lat[i].toFixed(5)+','+G.lon[i].toFixed(5));}
   const f=x=>x.lat.toFixed(5)+','+x.lng.toFixed(5);
   return `https://www.google.com/maps/dir/?api=1&origin=${f(A)}&destination=${f(B)}${wp.length?'&waypoints='+encodeURIComponent(wp.join('|')):''}&travelmode=driving`;
 }
@@ -581,6 +616,13 @@ $('likely').onchange=()=>{store.set('gr-likely',$('likely').checked);if(G){apply
 $('swap').onclick=()=>{if(!A||!B)return;const a=A,qa=$('qA').value,qb=$('qB').value;setPoint('A',B,qb,true);setPoint('B',a,qa,true);go();};
 $('clear').onclick=()=>{A=B=null;if(mA)map.removeLayer(mA);if(mB)map.removeLayer(mB);mA=mB=null;$('qA').value=$('qB').value='';go();ready();hint('Tap the map to set your start');};
 $('area').onclick=()=>{const b=map.getBounds(),s=[b.getSouth(),b.getWest(),b.getNorth(),b.getEast()];if((s[2]-s[0])*(s[3]-s[1])>0.04){toast('Zoom in to about one town first');return;}loadArea(s);};
+function drawOpts(){
+  for(const b of $('vehSeg').children)b.classList.toggle('on',b.dataset.v===opt.vehicle);
+  $('trSel').options[0].textContent='Auto: '+autoTraffic();$('trSel').value=opt.traffic;
+}
+$('vehSeg').onclick=e=>{const b=e.target.closest('button');if(!b)return;opt.vehicle=b.dataset.v;store.set('gr-opt',opt);drawOpts();go();};
+$('trSel').onchange=()=>{opt.traffic=$('trSel').value;store.set('gr-opt',opt);drawOpts();go();};
+drawOpts();
 $('handle').onclick=()=>$('panel').classList.toggle('min');
 
 /* ---------- install as app ---------- */
