@@ -42,8 +42,25 @@ CAT_RULES = [
 ]
 
 
-def type_of(cat):
+NAME_RULES = [
+    (r"gurdwara|gurudwara|gurduara|\bsahib\b|ਗੁਰਦੁਆਰਾ", "gurdwara"), (r"\bmandir\b|\btemple\b|\bdham\b|\bshivala\b|मंदिर|ਮੰਦਰ", "temple"),
+    (r"\bmasjid\b|\bmosque\b|\bdargah\b", "mosque"), (r"\bchurch\b", "church"),
+    (r"petrol|fuel|filling station|\bcng\b|indian oil|bharat petroleum|hp pump|\biocl\b|\bbpcl\b|\bhpcl\b", "fuel"),
+    (r"\batm\b", "atm"), (r"hospital", "hospital"), (r"chemist|medical store|medicos|pharmacy", "pharmacy"),
+    (r"\bchowk\b|\bchauk\b", "road"), (r"\bmall\b|\bbazaar\b|\bbazar\b|\bmarket\b|\bmandi\b", "market"),
+    (r"\bschool\b", "school"), (r"\bcollege\b|university", "college"), (r"\bpark\b", "park"), (r"\bdhaba\b", "restaurant"),
+    (r"sweets|bakery|cafe|\bcafé\b", "cafe"), (r"\bbank\b", "bank"), (r"\bhotel\b", "hotel"), (r"police|thana", "police"),
+]
+
+
+def type_of(cat, name=""):
+    nm = (name or "").lower()
+    for pat, ty in NAME_RULES:
+        if re.search(pat, nm):
+            return ty
     c = (cat or "").lower()
+    if any(k in c for k in ("place_of_worship", "religious", "spiritual")):
+        return "temple"
     for keys, ty in CAT_RULES:
         if any(k in c for k in keys):
             return ty
@@ -109,6 +126,7 @@ def main():
         mine = [r for r in rows if s <= r[4] <= n and w <= r[3] <= e]
         mine.sort(key=lambda r: -(r[2] or 0))
         added = []
+        other_cats = {}
         for name, cat, conf, lon, lat, addr in mine:
             nm = name.strip()
             if len(nm) < 2:
@@ -127,7 +145,10 @@ def main():
             street = 0
             if addr:
                 street = addr.split(",")[0].strip()[:60] or 0
-            added.append([nm, round(lat, 5), round(lon, 5), type_of(cat), 0, street, "o"])
+            ty = type_of(cat, nm)
+            if ty == "other":
+                other_cats[cat] = other_cats.get(cat, 0) + 1
+            added.append([nm, round(lat, 5), round(lon, 5), ty, 0, street, "o"])
             if len(added) >= MAX_PER_CITY:
                 break
         data["p"] = osm + added
@@ -138,6 +159,7 @@ def main():
         for p in added:
             by[p[3]] = by.get(p[3], 0) + 1
         print(f"{city}: {len(osm)} OpenStreetMap + {len(added)} Overture places {json.dumps(by)}")
+        print(f"{city}: most common unsorted categories:", sorted(other_cats.items(), key=lambda x: -x[1])[:40])
 
 
 if __name__ == "__main__":
