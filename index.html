@@ -49,6 +49,7 @@ button.on{background:var(--amber);border-color:var(--amber);color:#1b1e21}
 #status{font-size:13px;color:var(--mute);min-height:20px}
 #status.err{color:var(--red)}
 .gm{display:block;text-align:center;padding:12px;border-radius:10px;background:var(--green);color:#fff;font-weight:700;text-decoration:none}
+.gm[hidden]{display:none}
 .note{font-size:13px;color:var(--mute);margin:0}
 .leaflet-container{font:inherit}
 @media(max-width:760px){#app{grid-template-columns:1fr;grid-template-rows:55vh auto;height:auto}#map{grid-row:1;height:55vh}#panel{grid-row:2;border-right:0;overflow:visible}}
@@ -224,7 +225,7 @@ function fromCompact(c){const els=[],N=c.n.length/2;for(let i=0;i<N;i++)els.push
 try{fixes=JSON.parse(localStorage.getItem('gr-fixes'))||fixes;}catch(e){}
 
 const map=L.map('map',{preferCanvas:true,zoomControl:true}).fitBounds([[DEF[0],DEF[1]],[DEF[2],DEF[3]]]);
-L.tileLayer('https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png',{maxZoom:19,subdomains:'abcd',attribution:'&copy; OpenStreetMap contributors &copy; CARTO'}).addTo(map);
+L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png',{maxZoom:19,attribution:'&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'}).addTo(map);
 const sigLayer=L.layerGroup().addTo(map),routeLayer=L.layerGroup().addTo(map);
 const pin=c=>L.divIcon({className:'',html:`<div style="width:22px;height:22px;border-radius:50%;background:${c};border:3px solid #fff;box-shadow:0 1px 4px #0006"></div>`,iconSize:[22,22],iconAnchor:[11,11]});
 let mA=null,mB=null;
