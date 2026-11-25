@@ -82,8 +82,9 @@ button.on{background:var(--amber);border-color:var(--amber);color:#1b1e21}
     <button id="edit">Fix signals</button>
     <button id="area">Load roads for this view</button>
     <button id="clear">Clear</button>
+    <button id="copyfix">Copy my signal fixes</button>
   </div>
-  <p class="note">Road and signal data from OpenStreetMap. Some signals may be missing there. Turn on <b>Fix signals</b> and tap a junction to add or remove one. Your fixes stay saved in this browser. Times are estimates: drive time plus about 35 s average wait at each signal.</p>
+  <p class="note">Road and signal data from OpenStreetMap. Some signals may be missing there. Turn on <b>Fix signals</b> and tap a junction to add or remove one. Your fixes stay saved in this browser; press <b>Copy my signal fixes</b> to share them so every device gets them. Times are estimates: drive time plus about 35 s average wait at each signal.</p>
 </aside>
 <div id="map"></div>
 </div>
@@ -218,7 +219,7 @@ const MODES=[
   {id:'few',name:'Fewest signals',desc:'Avoids red lights hardest',color:'#1f9d55'}
 ];
 let G=null,Z=null,sigSet=null,A=null,B=null,results=[],sel='bal',editMode=false,bbox=DEF;
-let fixes={add:[],del:[]},dataNote='';
+let fixes={add:[],del:[]},dataNote='',shared={add:[],del:[]};
 function fromCompact(c){const els=[],N=c.n.length/2;for(let i=0;i<N;i++)els.push({type:'node',id:i,lat:c.n[2*i]/1e6,lon:c.n[2*i+1]/1e6});for(const s of c.s)els.push({type:'node',id:s,lat:c.n[2*s]/1e6,lon:c.n[2*s+1]/1e6,tags:{highway:'traffic_signals'}});for(const w of c.w)els.push({type:'way',nodes:w.slice(2),tags:{highway:c.hw[w[0]]||'residential',oneway:w[1]===1?'yes':w[1]===-1?'-1':'no'}});return els;}
 try{fixes=JSON.parse(localStorage.getItem('gr-fixes'))||fixes;}catch(e){}
 
@@ -264,6 +265,7 @@ async function loadArea(b){
     if(!data){status('The free map-data servers are busy right now. Wait a minute and press "Load roads for this view" again.',true);return;}
     cachePut(key,{t:Date.now(),d:data});
   }
+  try{const r=await fetch('data/signals-extra.json',{cache:'no-cache'});if(r.ok){const j=await r.json();shared={add:j.add||[],del:j.del||[]};}}catch(e){}
   status('Building road network…');
   await new Promise(r=>setTimeout(r,20));
   G=Core.build(data);bbox=b;
@@ -274,8 +276,9 @@ async function loadArea(b){
 
 function applySignals(){
   sigSet=new Set(G.osmSig);
-  for(const [la,lo] of fixes.del){const n=Core.nearest(G,la,lo,false);if(n&&n.m<20)for(const s of [...sigSet])if(Core.hav(G.lat[s],G.lon[s],la,lo)<40)sigSet.delete(s);}
-  for(const [la,lo] of fixes.add){const n=Core.nearest(G,la,lo,true);if(n&&n.m<40)sigSet.add(n.i);}
+  const allDel=[...shared.del,...fixes.del],allAdd=[...shared.add,...fixes.add];
+  for(const [la,lo] of allDel){const n=Core.nearest(G,la,lo,false);if(n&&n.m<20)for(const s of [...sigSet])if(Core.hav(G.lat[s],G.lon[s],la,lo)<40)sigSet.delete(s);}
+  for(const [la,lo] of allAdd){if(allDel.some(([a,o])=>Core.hav(a,o,la,lo)<40)&&!fixes.add.some(([a,o])=>a===la&&o===lo))continue;const n=Core.nearest(G,la,lo,true);if(n&&n.m<40)sigSet.add(n.i);}
   Z=Core.zones(G,sigSet);
   drawSignals();
 }
@@ -358,6 +361,7 @@ function toggleSignal(ll){
   status(near>=0?'Signal removed.':'Signal added.');
 }
 $('edit').onclick=()=>{editMode=!editMode;$('edit').classList.toggle('on',editMode);$('edit').textContent=editMode?'Done fixing':'Fix signals';if(G)drawSignals();status(editMode?'Tap a red dot to remove it, or tap a junction to add a signal.':'Signal editing off.');};
+$('copyfix').onclick=async()=>{const t=JSON.stringify(fixes);try{await navigator.clipboard.writeText(t);status(`Copied ${fixes.add.length} added and ${fixes.del.length} removed signals. Paste them to Claude to save them for every device.`);}catch(e){status('Copy blocked by the browser. Fixes: '+t);}};
 $('pen').oninput=()=>{$('pv').textContent=$('pen').value+' s';};
 $('pen').onchange=go;
 $('swap').onclick=()=>{if(!A||!B)return;const a=A,qa=$('qA').value;A=B;B=a;mA.setLatLng(A);mB.setLatLng(B);$('qA').value=$('qB').value;$('qB').value=qa;go();};
