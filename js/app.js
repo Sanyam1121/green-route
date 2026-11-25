@@ -544,6 +544,14 @@
   }
   // Full search used by typing and by voice: saved places, local index, then online services
   async function findPlaces(q, sig, onUpdate) {
+    // sentences typed or dictated with the keyboard mic: "Model Town jana hai", "ghar le chalo"
+    const stripped = stripFiller(q);
+    if (stripped && stripped !== norm(q)) q = stripped;
+    const hw = norm(q);
+    if (HOME_W.includes(hw) || WORK_W.includes(hw)) {
+      const p = placeKey().find(x => x.kind === (HOME_W.includes(hw) ? 'home' : 'work'));
+      if (p) { const r = [{ name: p.n, sub: t('saved_place'), lat: p.la, lon: p.lo, icon: p.icon }]; onUpdate && onUpdate(r); return r; }
+    }
     const cat = categoryOf(q);
     if (cat && PL.length) { const r = nearestOfType(cat); if (r.length) { r.forEach(x => x.sub = t('nearest') + ' · ' + x.sub); onUpdate && onUpdate(r); return r; } }
     const qn = norm(q);
@@ -602,7 +610,7 @@
   const FILLER = ['take me to', 'take me', 'navigate to', 'directions to', 'direction to', 'route to', 'go to', 'show me', 'show', 'i want to go to', 'i want to go', 'please', 'plz', 'jaldi',
     'mujhe', 'mujhko', 'hame', 'hamein', 'humein', 'mainu', 'menu', 'manu', 'asi', 'assi', 'sanu', 'ji', 'bhai', 'paaji', 'yaar',
     'le chalo', 'lai chalo', 'le chal', 'lai chal', 'le jao', 'lai jao', 'chalo', 'chalna hai', 'chalna', 'jana hai', 'jaana hai', 'jana he', 'jana h', 'jana ae', 'jaana ae', 'jaana', 'jana', 'janda', 'jaanda', 'pahuncha do', 'pahunchao', 'pohncha do',
-    'ka rasta', 'da rasta', 'ka raasta', 'da raasta', 'rasta', 'raasta', 'route', 'ki taraf', 'wal', 'tak', 'ko', 'nu', 'hai', 'he', 'ae', 'h',
+    'ka rasta', 'da rasta', 'ka raasta', 'da raasta', 'rasta', 'raasta', 'route', 'ki taraf', 'wal', 'tak', 'ko', 'nu', 'hai',
     'मुझे', 'हमें', 'ले चलो', 'ले चल', 'ले जाओ', 'चलो', 'चलना है', 'जाना है', 'जाना', 'पहुँचाओ', 'पहुंचाओ', 'का रास्ता', 'रास्ता', 'की तरफ़', 'की तरफ', 'तक', 'को', 'है', 'जी',
     'ਮੈਨੂੰ', 'ਸਾਨੂੰ', 'ਲੈ ਚੱਲੋ', 'ਲੈ ਚਲੋ', 'ਲੈ ਜਾਓ', 'ਚੱਲੋ', 'ਚਲੋ', 'ਜਾਣਾ ਹੈ', 'ਜਾਣਾ', 'ਦਾ ਰਸਤਾ', 'ਰਸਤਾ', 'ਵੱਲ', 'ਤੱਕ', 'ਨੂੰ', 'ਹੈ', 'ਜੀ'].sort((a, b) => b.length - a.length);
   const HOME_W = ['ghar', 'gher', 'home', 'house', 'घर', 'ਘਰ'], WORK_W = ['office', 'ofis', 'offc', 'daftar', 'dafter', 'kaam', 'work', 'dukaan', 'dukan', 'दफ़्तर', 'दफ्तर', 'ऑफिस', 'ऑफ़िस', 'ਦਫ਼ਤਰ', 'ਦਫਤਰ', 'ਆਫ਼ਿਸ'];
@@ -646,20 +654,44 @@
     setTimeout(() => { $('micSheet').hidden = true; }, ok ? 600 : 1800);
     $('micState').textContent = msg;
   }
+  // Brave and some other browsers expose the speech API but block the speech service behind it
+  const voiceBlockedBrowser = () => !!navigator.brave || /Firefox|FxiOS|SamsungBrowser\/1[0-5]\b/.test(navigator.userAgent);
+  function voiceFail(key) {
+    if (rec) { rec.onend = null; try { rec.abort(); } catch (e) { } }
+    $('micSheet').hidden = false;
+    $('micState').textContent = t(key);
+    $('micText').textContent = t('voice_type_tip');
+    $('micCancel').textContent = t('type_instead');
+    $('micCancel').onclick = () => { $('micSheet').hidden = true; $('micCancel').textContent = t('cancel'); $('micCancel').onclick = cancelVoice; $('qB').focus(); };
+  }
+  function cancelVoice() { try { rec && rec.abort(); } catch (e) { } $('micSheet').hidden = true; }
   function startVoice() {
     const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
-    if (!SR) { toast(t('voice_unsupported')); return; }
+    if (!SR || voiceBlockedBrowser()) { voiceFail(SR ? 'voice_browser_blocked' : 'voice_unsupported'); return; }
     try { speechSynthesis.cancel(); } catch (e) { }
     rec = new SR(); rec.lang = I18N.voiceLang(); rec.interimResults = true; rec.maxAlternatives = 1; rec.continuous = false;
     $('micSheet').hidden = false; $('micState').textContent = t('listening'); $('micText').textContent = t('voice_examples');
-    let final = '';
-    rec.onresult = e => { let s = ''; for (const r of e.results) { s += r[0].transcript; if (r.isFinal) final = s; } $('micText').textContent = '“' + s + '”'; };
-    rec.onerror = e => { if (e.error === 'not-allowed' || e.error === 'service-not-allowed') voiceDone(t('mic_denied')); else if (e.error === 'no-speech') voiceDone(t('voice_no_speech')); };
-    rec.onend = () => { if (final) voiceCommand(final.trim()); else if (!$('micSheet').hidden && $('micState').textContent === t('listening')) voiceDone(t('voice_no_speech')); };
-    try { rec.start(); } catch (e) { toast(t('voice_unsupported')); $('micSheet').hidden = true; }
+    $('micCancel').textContent = t('cancel'); $('micCancel').onclick = cancelVoice;
+    let final = '', heard = '', failed = false; const started = Date.now();
+    rec.onresult = e => { let s = ''; for (const r of e.results) { s += r[0].transcript; if (r.isFinal) final = s; } heard = s; $('micText').textContent = '“' + s + '”'; };
+    rec.onerror = e => {
+      failed = true;
+      const map = { 'not-allowed': 'mic_denied', 'service-not-allowed': 'voice_browser_blocked', 'network': 'voice_browser_blocked', 'audio-capture': 'voice_no_mic', 'language-not-supported': 'voice_lang_unsupported' };
+      if (e.error === 'no-speech') voiceDone(t('voice_no_speech'));
+      else if (e.error === 'aborted') { }
+      else voiceFail(map[e.error] || 'voice_browser_blocked');
+    };
+    rec.onend = () => {
+      const said = (final || heard).trim();
+      if (said) { voiceCommand(said); return; }
+      if (failed || $('micSheet').hidden) return;
+      // ended at once without any sound or error: the browser silently refused
+      if (Date.now() - started < 1500) voiceFail('voice_browser_blocked'); else voiceDone(t('voice_no_speech'));
+    };
+    try { rec.start(); } catch (e) { voiceFail('voice_browser_blocked'); }
   }
   $('mic').onclick = startVoice;
-  $('micCancel').onclick = () => { try { rec && rec.abort(); } catch (e) { } $('micSheet').hidden = true; };
+  $('micCancel').onclick = cancelVoice;
 
   /* ---------------- location ---------------- */
   let lastFix = null;
