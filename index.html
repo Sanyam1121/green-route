@@ -4,635 +4,111 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <meta name="theme-color" content="#1f9d55">
-<meta name="description" content="Find the quickest way across Jalandhar with the fewest red lights.">
-<title>Green Route – Jalandhar</title>
+<meta name="description" content="The quickest way across Jalandhar, Ludhiana, Amritsar and Phagwara with the fewest red lights — through galiyan when it is faster.">
+<title>Green Route</title>
 <link rel="manifest" href="manifest.webmanifest">
 <link rel="icon" href="icons/icon.svg" type="image/svg+xml">
 <link rel="apple-touch-icon" href="icons/icon-192.png">
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
-<link href="https://fonts.googleapis.com/css2?family=Hanken+Grotesk:wght@400;600;800&display=swap" rel="stylesheet">
-<style>
-/* VOICE: calm, quick driving helper — one clear answer
-   IDEA: a dashboard card that sits on top of the city map
-   PICTURE: full map, the best route drawn bold, red/amber dots for lights
-   COLOUR/TYPE: asphalt ink, signal red/amber/green; Hanken Grotesk
-   LAYOUT: side panel on desktop; bottom sheet over a full-screen map on phones */
-:root{color-scheme:light dark;--bg:light-dark(#f4f5f2,#16181a);--card:light-dark(#fff,#202326);--ink:light-dark(#1b1e21,#eceeea);--mute:light-dark(#5d646b,#9aa1a7);--line:light-dark(#dfe2de,#30353a);--red:#e5383b;--amber:#f2a516;--green:#1f9d55;--blue:#3a6fd8}
-:root[data-theme=light]{color-scheme:light}:root[data-theme=dark]{color-scheme:dark}
-*{box-sizing:border-box;min-width:0}
-html,body{height:100%;margin:0}
-body{background:var(--bg);color:var(--ink);font:15px/1.5 "Hanken Grotesk",system-ui,sans-serif;overflow:hidden}
-#app{display:grid;grid-template-columns:400px 1fr;height:100dvh}
-#panel{overflow-y:auto;padding:18px 18px 24px;border-right:1px solid var(--line);display:flex;flex-direction:column;gap:12px;background:var(--bg);z-index:1000}
-#mapwrap{position:relative}
-#map{position:absolute;inset:0}
-.handle{display:none}
-h1{margin:0;font-size:26px;line-height:1.05;font-weight:800;display:flex;align-items:center;gap:10px}
-.lamp{display:inline-flex;flex-direction:column;gap:3px;background:#222;padding:4px;border-radius:7px}
-.lamp i{width:8px;height:8px;border-radius:50%;background:#444}.lamp i:last-child{background:var(--green);box-shadow:0 0 8px var(--green)}
-.trip{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:6px;display:grid;grid-template-columns:22px 1fr 44px;gap:2px 8px;align-items:center}
-.trip .pt{width:12px;height:12px;border-radius:50%;justify-self:center}
-.trip .line{grid-column:1;width:2px;height:10px;background:var(--line);justify-self:center}
-.field{position:relative}
-.field input{width:100%;font:inherit;font-size:16px;padding:10px;border:0;border-radius:10px;background:transparent;color:var(--ink);min-height:44px}
-.field input:focus{background:var(--bg);outline:none}
-.drop{position:absolute;left:0;right:-52px;top:100%;background:var(--card);border:1px solid var(--line);border-radius:12px;box-shadow:0 8px 24px #0003;z-index:2000;overflow:hidden}
-.drop button{display:block;width:100%;text-align:left;border:0;border-radius:0;font-weight:400;padding:9px 12px;min-height:48px;border-bottom:1px solid var(--line)}
-.drop button b{display:block;font-weight:600}.drop button small{color:var(--mute)}
-.drop button:last-child{border-bottom:0}
-.drop button.loc{color:var(--green);font-weight:600}
-button{font:inherit;font-weight:600;min-height:44px;padding:0 14px;border-radius:10px;border:1px solid var(--line);background:var(--card);color:var(--ink);cursor:pointer}
-button:hover{border-color:var(--mute)}
-button:focus-visible,input:focus-visible{outline:2px solid var(--green);outline-offset:1px}
-.ib{padding:0;width:44px;font-size:18px}
-button.on{background:var(--amber);border-color:var(--amber);color:#1b1e21}
-.hero{border-radius:16px;padding:16px;background:var(--green);color:#fff;display:flex;flex-direction:column;gap:10px}
-.hero .k{font-size:13px;font-weight:600;opacity:.85}
-.hero .t{font-size:38px;font-weight:800;line-height:1}
-.hero .t small{font-size:16px;font-weight:600;opacity:.9;margin-left:6px}
-.hero .why{font-size:14px;opacity:.95}
-.hero .acts{display:grid;grid-template-columns:1fr auto;gap:8px}
-.hero a,.hero button{display:flex;align-items:center;justify-content:center;min-height:48px;border-radius:12px;font-weight:800;text-decoration:none;border:0}
-.hero a{background:#fff;color:#14663a}
-.hero button{background:#ffffff26;color:#fff;padding:0 16px}
-.alts{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:6px}
-.opts{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:6px}
-.trsel{display:flex;align-items:center;gap:6px;background:var(--card);border:1px solid var(--line);border-radius:12px;padding:0 4px 0 12px;font-size:14px;font-weight:600}
-.trsel span{color:var(--mute);font-weight:400}
-.trsel select{flex:1;font:inherit;font-size:16px;font-weight:600;border:0;background:transparent;color:var(--ink);min-height:44px}
-.hero .g{font-size:13px;font-weight:600;background:#ffffff26;border-radius:999px;padding:3px 10px;align-self:flex-start}
-.seg{display:flex;background:var(--card);border:1px solid var(--line);border-radius:12px;padding:3px;gap:3px}
-.seg button{flex:1;border:0;min-height:38px;padding:0 6px;font-size:14px;border-radius:9px;background:transparent;white-space:nowrap}
-.seg button.on{background:var(--ink);color:var(--bg)}
-.seg small{font-weight:400;opacity:.8}
-.alt{display:flex;flex-direction:column;align-items:flex-start;text-align:left;padding:8px 10px;min-height:64px;border-width:2px}
-.alt.sel{border-color:var(--ink)}
-.alt i{width:24px;height:4px;border-radius:2px;margin-bottom:4px}
-.alt b{font-size:13px;line-height:1.2}.alt span{font-size:12px;color:var(--mute);font-weight:400;line-height:1.3}
-#status{font-size:13px;color:var(--mute)}
-#status.err{color:var(--red)}
-details{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:0 12px}
-summary{cursor:pointer;font-weight:600;min-height:44px;display:flex;align-items:center}
-details[open]{padding-bottom:12px}
-.set{display:flex;flex-direction:column;gap:12px}
-.set .row{display:flex;justify-content:space-between;align-items:center;gap:10px}
-.set input[type=range]{width:100%;accent-color:var(--amber)}
-.set small{color:var(--mute);display:block;font-size:13px}
-.sw{appearance:none;width:44px;height:26px;border-radius:13px;background:var(--line);position:relative;cursor:pointer;flex:none;transition:background .2s}
-.sw::after{content:"";position:absolute;top:3px;left:3px;width:20px;height:20px;border-radius:50%;background:#fff;transition:left .2s}
-.sw:checked{background:var(--green)}.sw:checked::after{left:21px}
-.tools{display:flex;flex-wrap:wrap;gap:6px}
-.legend{display:flex;flex-wrap:wrap;gap:12px;font-size:13px;color:var(--mute)}
-.phone-legend{display:none!important}
-.legend span{display:flex;align-items:center;gap:6px}
-.dot{width:12px;height:12px;border-radius:50%;border:2px solid #fff;box-shadow:0 0 0 1px #0003}
-.hint{position:absolute;left:50%;top:14px;transform:translateX(-50%);z-index:900;background:var(--ink);color:var(--bg);padding:10px 16px;border-radius:999px;font-weight:600;font-size:14px;box-shadow:0 4px 14px #0004;pointer-events:none;white-space:nowrap;max-width:92%;overflow:hidden;text-overflow:ellipsis}
-.hint[hidden]{display:none}
-.fab{position:absolute;right:12px;bottom:28px;z-index:900;width:48px;height:48px;border-radius:50%;padding:0;font-size:20px;box-shadow:0 4px 14px #0003}
-.toast{position:fixed;left:50%;bottom:24px;transform:translateX(-50%);background:var(--ink);color:var(--bg);padding:10px 16px;border-radius:12px;z-index:3000;font-weight:600;opacity:0;transition:opacity .2s;pointer-events:none}
-.toast.show{opacity:1}
-.note{font-size:13px;color:var(--mute);margin:0}
-.leaflet-container{font:inherit}
-.install[hidden]{display:none}
-@media(max-width:760px){
-  #app{display:block}
-  #mapwrap{position:fixed;inset:0}
-  #panel{position:fixed;left:0;right:0;bottom:0;max-height:70dvh;border:0;border-radius:20px 20px 0 0;box-shadow:0 -6px 24px #0003;padding:6px 14px calc(16px + env(safe-area-inset-bottom));gap:10px}
-  .handle{display:block;align-self:center;width:100%;min-height:28px;border:0;background:none;padding:0}
-  .handle::before{content:"";display:block;margin:auto;width:44px;height:5px;border-radius:3px;background:var(--line)}
-  #panel.min .more{display:none}
-  h1,.legend{display:none}
-  .phone-legend{display:flex!important}
-  .alt{min-height:54px;padding:6px 8px}
-  .hero{padding:12px 14px;gap:6px}
-  .hero .why{font-size:13px}
-  .hero a,.hero button{min-height:44px}
-  .hero .t{font-size:32px}
-  .fab{bottom:auto;top:70px}
-  .hint{top:calc(10px + env(safe-area-inset-top))}
-}
-@media(prefers-reduced-motion:reduce){*{transition:none!important}}
-</style>
+<link href="https://fonts.googleapis.com/css2?family=Hanken+Grotesk:wght@400;600;800&family=Noto+Sans+Devanagari:wght@400;600;800&family=Noto+Sans+Gurmukhi:wght@400;600;800&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="css/style.css">
 </head>
 <body>
 <div id="app">
 <aside id="panel">
   <button class="handle" id="handle" aria-label="Show or hide details"></button>
-  <h1 class="more"><span class="lamp"><i></i><i></i><i></i></span>Green Route</h1>
+  <h1 class="more"><span class="lamp"><i></i><i></i><i></i></span><span data-i18n="title">Green Route</span></h1>
   <div class="trip">
     <span class="pt" style="background:var(--green)"></span>
-    <div class="field"><input id="qA" placeholder="From: search or tap map" autocomplete="off" aria-label="From"><div class="drop" id="dA" hidden></div></div>
-    <button class="ib" id="locA" title="Start from my location" aria-label="Start from my location">◎</button>
+    <div class="field"><input id="qA" data-i18n-ph="from_ph" autocomplete="off" aria-label="From"><div class="drop" id="dA" hidden></div></div>
+    <button class="ib" id="locA" aria-label="Start from my location" title="My location">◎</button>
     <span class="line"></span><span></span><span></span>
     <span class="pt" style="background:var(--red)"></span>
-    <div class="field"><input id="qB" placeholder="To: where are you going?" autocomplete="off" aria-label="To"><div class="drop" id="dB" hidden></div></div>
-    <button class="ib" id="swap" title="Swap" aria-label="Swap start and end">⇅</button>
+    <div class="field"><input id="qB" data-i18n-ph="to_ph" autocomplete="off" aria-label="To"><div class="drop" id="dB" hidden></div></div>
+    <button class="ib" id="swap" aria-label="Swap start and end" title="Swap">⇅</button>
   </div>
-
+  <div class="quick" id="quick" hidden></div>
   <div class="opts">
-    <div class="seg" id="vehSeg" role="group" aria-label="Vehicle"><button data-v="car">🚗 Car</button><button data-v="bike">🛵 Bike</button></div>
-    <label class="trsel"><span>Traffic</span><select id="trSel" aria-label="Main-road traffic"><option value="auto">Auto</option><option value="light">Light</option><option value="normal">Normal</option><option value="heavy">Heavy</option></select></label>
+    <div class="seg" id="vehSeg" role="group" aria-label="Vehicle"><button data-v="car" data-i18n="car">🚗 Car</button><button data-v="bike" data-i18n="bike">🛵 Bike</button></div>
+    <label class="trsel"><span data-i18n="traffic_lbl">Traffic</span><select id="trSel" aria-label="Main-road traffic"><option value="auto">Auto</option><option value="light" data-i18n="tr_light_cap">Light</option><option value="normal" data-i18n="tr_normal_cap">Normal</option><option value="heavy" data-i18n="tr_heavy_cap">Heavy</option></select></label>
   </div>
   <div id="result"></div>
-  <div id="status">Loading Jalandhar map…</div>
-
+  <div id="status"></div>
+  <div class="card more" id="savings"></div>
   <div class="more legend">
-    <span><i class="dot" style="background:var(--red)"></i>Red light (confirmed)</span>
-    <span><i class="dot" style="background:var(--amber)"></i>Likely red light</span>
+    <span><i class="dot" style="background:var(--red)"></i><span data-i18n="legend_sure">Red light (confirmed)</span></span>
+    <span><i class="dot" style="background:var(--amber)"></i><span data-i18n="legend_likely">Likely red light</span></span>
+    <span>📷 <span data-i18n="legend_cam">Camera</span></span>
   </div>
-
   <details class="more" id="settings">
-    <summary>Settings and signal fixes</summary>
+    <summary data-i18n="settings">Settings, places and fixes</summary>
     <div class="set">
-      <div class="legend phone-legend"><span><i class="dot" style="background:var(--red)"></i>Red light (confirmed)</span><span><i class="dot" style="background:var(--amber)"></i>Likely red light</span></div>
-      <div>
-        <div class="row"><label for="wait"><b>Average wait at a red light</b></label><b id="wv">45 s</b></div>
-        <input type="range" id="wait" min="10" max="150" step="5" value="45">
-        <small>Used to work out the quickest route. Raise it at rush hour.</small>
+      <div class="grid3">
+        <label><span data-i18n="city">City</span><select id="citySel"><option value="jalandhar" data-i18n="jalandhar">Jalandhar</option><option value="ludhiana" data-i18n="ludhiana">Ludhiana</option><option value="amritsar" data-i18n="amritsar">Amritsar</option><option value="phagwara" data-i18n="phagwara">Phagwara</option></select></label>
+        <label><span data-i18n="language">Language</span><select id="langSel"><option value="en">English</option><option value="hi">हिन्दी</option><option value="pa">ਪੰਜਾਬੀ</option></select></label>
+        <label><span data-i18n="theme">Map colours</span><select id="themeSel"><option value="auto" data-i18n="theme_auto">Auto</option><option value="light" data-i18n="theme_light">Light</option><option value="dark" data-i18n="theme_dark">Dark</option></select></label>
       </div>
-      <div class="row"><div><b>Count likely red lights</b><small>OpenStreetMap is missing most signals, so busy main-road junctions are counted as likely ones.</small></div><input type="checkbox" class="sw" id="likely" checked aria-label="Count likely red lights"></div>
+      <div class="row"><div><b data-i18n="voice_lbl">Voice directions</b><small data-i18n="voice_sub"></small></div><input type="checkbox" class="sw" id="voice" aria-label="Voice directions"></div>
+      <div class="row"><div><b data-i18n="likely_lbl">Count likely red lights</b><small data-i18n="likely_sub"></small></div><input type="checkbox" class="sw" id="likely" aria-label="Count likely red lights"></div>
       <div>
-        <b>Fix red lights</b>
-        <small>Turn on, then tap a dot to remove it or tap a junction to add one. Fixes are saved on this device.</small>
-        <div class="tools" style="margin-top:8px">
-          <button id="edit">Fix red lights</button>
-          <button id="copyfix">Copy my fixes</button>
-        </div>
+        <div class="row"><label for="wait"><b data-i18n="wait_lbl">Average wait at a red light</b></label><b id="wv">45 s</b></div>
+        <input type="range" id="wait" min="10" max="150" step="5" value="45">
+        <small data-i18n="wait_sub"></small>
+      </div>
+      <div><b data-i18n="places_title">Saved places</b><div id="placesList"></div></div>
+      <div><b data-i18n="reports_title">Shared reports</b><small id="repState"></small></div>
+      <div>
+        <b data-i18n="fix_title">Fix red lights</b>
+        <small data-i18n="fix_sub"></small>
+        <div class="tools"><button id="edit" data-i18n="fix_lights">Fix red lights</button><button id="copyfix" data-i18n="copy_fixes">Copy my fixes</button></div>
       </div>
       <div class="tools">
-        <button id="area">Load roads for this map view</button>
-        <button id="clear">Clear trip</button>
-        <button id="install" class="install" hidden>Install app</button>
+        <button id="area" data-i18n="area_btn">Load roads for this map view</button>
+        <button id="clear" data-i18n="clear_btn">Clear trip</button>
+        <button id="install" data-i18n="install_btn" hidden>Install app</button>
       </div>
-      <p class="note">Roads and signals from OpenStreetMap, updated weekly. Times are estimates: driving time plus the wait above at each red light. Always follow traffic rules and police instructions.</p>
+      <div class="legend phone-legend">
+        <span><i class="dot" style="background:var(--red)"></i><span data-i18n="legend_sure"></span></span>
+        <span><i class="dot" style="background:var(--amber)"></i><span data-i18n="legend_likely"></span></span>
+        <span>📷 <span data-i18n="legend_cam"></span></span>
+      </div>
+      <p class="note" data-i18n="note"></p>
     </div>
   </details>
 </aside>
-<div id="mapwrap"><div id="map"></div><div class="hint" id="hint" hidden></div><button class="fab" id="me" title="Show my location" aria-label="Show my location">◎</button></div>
+<div id="mapwrap">
+  <div id="map"></div>
+  <div class="hint" id="hint" hidden></div>
+  <button class="fab" id="me" aria-label="Show my location" title="My location">◎</button>
+  <button class="fab rep-fab" id="repBtn" aria-label="Report" title="Report">⚠️</button>
+</div>
+</div>
+
+<div id="navTop" class="navui">
+  <div class="arrow" id="navArrow">↑</div>
+  <div class="ntext"><div class="ndist" id="navDist"></div><div id="navText"></div><small id="navThen"></small></div>
+</div>
+<div id="navBottom" class="navui">
+  <div id="navLeft"></div>
+  <div class="nbtns">
+    <button id="navCenter" hidden aria-label="Re-centre">◎</button>
+    <button id="navReport" aria-label="Report">⚠️</button>
+    <button id="navMute" aria-label="Voice on or off">🔊</button>
+    <button id="navStop" class="stop" data-i18n="stop">Stop</button>
+  </div>
+</div>
+
+<div class="sheet" id="repSheet" hidden role="dialog" aria-modal="true">
+  <div class="box"><b data-i18n="report_title">What do you see?</b><div class="grid"></div><button id="repCancel" data-i18n="cancel">Cancel</button></div>
+</div>
+<div class="sheet" id="repWhere" hidden role="dialog" aria-modal="true">
+  <div class="box"><b data-i18n="report_where">Where is it?</b><div class="tools"><button id="repHere" data-i18n="rep_here">At my location</button><button id="repMap" data-i18n="rep_map">Pick on map</button></div><button id="repCancel2" data-i18n="cancel">Cancel</button></div>
 </div>
 <div class="toast" id="toast"></div>
 
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
-<script id="core">
-/* ---------- routing core (no DOM) ---------- */
-var Core = (function(){
-  // road classes; 0-4 are main roads, 5-9 are small streets / galiyan
-  const CLASSES=['motorway','trunk','primary','secondary','tertiary','unclassified','residential','living_street','service','road'];
-  const RANK={motorway:4,trunk:4,primary:3,secondary:2,tertiary:1};
-  const cls=h=>{const i=CLASSES.indexOf((h||'').replace('_link',''));return i<0?6:i;};
-  const R=6371000,rad=Math.PI/180;
-  function hav(a1,o1,a2,o2){const dA=(a2-a1)*rad,dO=(o2-o1)*rad;const x=Math.sin(dA/2)**2+Math.cos(a1*rad)*Math.cos(a2*rad)*Math.sin(dO/2)**2;return 2*R*Math.asin(Math.sqrt(x));}
-  function bearing(a1,o1,a2,o2){return Math.atan2((o2-o1)*Math.cos(a1*rad),a2-a1)/rad;}
-
-  function build(data){
-    const idx=new Map(),lat=[],lon=[],sig=new Set(),ways=[];
-    for(const e of data.elements){
-      if(e.type==='way'){ways.push(e);continue;}
-      if(e.type!=='node')continue;
-      let i=idx.get(e.id);
-      if(i===undefined){i=lat.length;idx.set(e.id,i);lat.push(e.lat);lon.push(e.lon);}
-      const t=e.tags;
-      if(t&&(t.highway==='traffic_signals'||t.crossing==='traffic_signals'))sig.add(i);
-    }
-    const N=lat.length,adj=Array.from({length:N},()=>[]),nb=new Array(N);
-    const par=new Int32Array(N);for(let i=0;i<N;i++)par[i]=i;
-    const find=x=>{while(par[x]!==x){par[x]=par[par[x]];x=par[x];}return x;};
-    const link=(a,b,r)=>{const m=nb[a]||(nb[a]=new Map());if((m.get(b)??-1)<r)m.set(b,r);};
-    for(const w of ways){
-      const t=w.tags||{},h=t.highway,s=cls(h),ow=t.oneway,rk=RANK[h]||0;
-      let dir=0;
-      if(ow==='yes'||ow==='1'||ow==='true'||t.junction==='roundabout'||t.junction==='circular'||h==='motorway')dir=1;
-      if(ow==='-1')dir=-1;
-      if(ow==='no')dir=0;
-      for(let k=0;k+1<w.nodes.length;k++){
-        const a=idx.get(w.nodes[k]),b=idx.get(w.nodes[k+1]);
-        if(a===undefined||b===undefined)continue;
-        const d=hav(lat[a],lon[a],lat[b],lon[b]);
-        if(dir!==-1)adj[a].push(b,d,s);
-        if(dir!==1)adj[b].push(a,d,s);
-        link(a,b,rk);link(b,a,rk);
-        const ra=find(a),rb=find(b);if(ra!==rb)par[ra]=rb;
-      }
-    }
-    // Likely signals: a main road (secondary+) meeting another significant road (tertiary+)
-    // in at least three clearly different directions.
-    const likely=[];
-    for(let i=0;i<N;i++){
-      const m=nb[i];if(!m||m.size<3)continue;
-      let M=0;const dirs=[];
-      for(const [j,r] of m){if(r>=1){dirs.push(bearing(lat[i],lon[i],lat[j],lon[j]));if(r>=2)M++;}}
-      if(dirs.length<3||M<2)continue;
-      const distinct=[];
-      for(const b of dirs)if(distinct.every(x=>{const d=Math.abs(((b-x)%360+540)%360-180);return d>=35;}))distinct.push(b);
-      if(distinct.length>=3)likely.push(i);
-    }
-    const size=new Map();let best=-1,bs=0;
-    for(let i=0;i<N;i++){if(!adj[i].length)continue;const r=find(i);const c=(size.get(r)||0)+1;size.set(r,c);if(c>bs){bs=c;best=r;}}
-    const main=new Uint8Array(N);for(let i=0;i<N;i++)if(adj[i].length&&find(i)===best)main[i]=1;
-    return {lat,lon,adj,osmSig:sig,likely,main,N};
-  }
-
-  function nearest(G,la,lo,onlyMain){
-    let bi=-1,bd=Infinity;const c=Math.cos(la*rad);
-    for(let i=0;i<G.N;i++){
-      if(onlyMain&&!G.main[i])continue;
-      const dy=G.lat[i]-la,dx=(G.lon[i]-lo)*c,d=dy*dy+dx*dx;
-      if(d<bd){bd=d;bi=i;}
-    }
-    return bi<0?null:{i:bi,m:hav(la,lo,G.lat[bi],G.lon[bi])};
-  }
-
-  // kinds: Map(node -> 'sure'|'likely'). Nearby signal nodes become one junction "zone";
-  // entering a zone = one stop. Sure nodes are clustered first so likely ones join them.
-  function zones(G,kinds){
-    const CELL=0.0006,key=(a,o)=>Math.floor(a/CELL)+':'+Math.floor(o/CELL);
-    const cl=[],grid=new Map(),sigCl=new Map();
-    const order=[...kinds].sort((a,b)=>(a[1]==='sure'?0:1)-(b[1]==='sure'?0:1));
-    for(const [s,kind] of order){
-      const la=G.lat[s],lo=G.lon[s],ca=Math.floor(la/CELL),co=Math.floor(lo/CELL);
-      const lim=kind==='sure'?50:70;
-      let found=-1;
-      for(let x=-1;x<=1&&found<0;x++)for(let y=-1;y<=1&&found<0;y++){
-        for(const c of grid.get((ca+x)+':'+(co+y))||[]){if(hav(la,lo,cl[c].lat,cl[c].lon)<lim){found=c;break;}}
-      }
-      if(found<0){found=cl.length;cl.push({lat:la,lon:lo,n:1,kind});const k=key(la,lo);(grid.get(k)||grid.set(k,[]).get(k)).push(found);}
-      else{const c=cl[found];if(c.kind===kind){c.lat=(c.lat*c.n+la)/(c.n+1);c.lon=(c.lon*c.n+lo)/(c.n+1);c.n++;}}
-      sigCl.set(s,found);
-    }
-    const zone=new Int32Array(G.N).fill(-1);
-    if(cl.length){
-      const g2=new Map();cl.forEach((c,i)=>{const k=key(c.lat,c.lon);(g2.get(k)||g2.set(k,[]).get(k)).push(i);});
-      for(let i=0;i<G.N;i++){
-        if(!G.adj[i].length)continue;
-        const la=G.lat[i],lo=G.lon[i],ca=Math.floor(la/CELL),co=Math.floor(lo/CELL);
-        let bd=30,bc=-1;
-        for(let x=-1;x<=1;x++)for(let y=-1;y<=1;y++)for(const c of g2.get((ca+x)+':'+(co+y))||[]){const d=hav(la,lo,cl[c].lat,cl[c].lon);if(d<bd){bd=d;bc=c;}}
-        zone[i]=bc;
-      }
-      for(const [s,c] of sigCl)zone[s]=c;
-    }
-    return {zone,clusters:cl};
-  }
-
-  // mode: 'short' (metres) | 'time' (seconds + P per red light)
-  function route(G,Z,src,dst,mode,P,costSp,realSp){
-    const N=G.N,dist=new Float64Array(N).fill(Infinity),prev=new Int32Array(N).fill(-1);
-    const hn=[],hk=[];
-    const push=(n,k)=>{let i=hn.length;hn.push(n);hk.push(k);while(i>0){const p=(i-1)>>1;if(hk[p]<=k)break;hn[i]=hn[p];hk[i]=hk[p];i=p;}hn[i]=n;hk[i]=k;};
-    const pop=()=>{const n=hn[0],ln=hn.pop(),lk=hk.pop();if(hn.length){let i=0;const L=hn.length;while(true){let c=2*i+1;if(c>=L)break;if(c+1<L&&hk[c+1]<hk[c])c++;if(hk[c]>=lk)break;hn[i]=hn[c];hk[i]=hk[c];i=c;}hn[i]=ln;hk[i]=lk;}return n;};
-    const zone=Z.zone;
-    dist[src]=0;push(src,0);
-    while(hn.length){
-      const d0=hk[0],u=pop();
-      if(d0>dist[u])continue;
-      if(u===dst)break;
-      const a=G.adj[u],zu=zone[u];
-      for(let k=0;k<a.length;k+=3){
-        const v=a[k],len=a[k+1];
-        let c=mode==='short'?len:len/costSp[a[k+2]];
-        const zv=zone[v];
-        if(zv>=0&&zv!==zu)c+=mode==='short'?1:P;
-        const nd=d0+c;
-        if(nd<dist[v]){dist[v]=nd;prev[v]=u;push(v,nd);}
-      }
-    }
-    if(dist[dst]===Infinity)return null;
-    const path=[];for(let x=dst;x!==-1;x=prev[x])path.push(x);path.reverse();
-    let len=0,time=0,small=0;const hit=[];
-    for(let k=0;k+1<path.length;k++){
-      const u=path[k],v=path[k+1],a=G.adj[u];
-      for(let j=0;j<a.length;j+=3)if(a[j]===v){len+=a[j+1];time+=a[j+1]/realSp[a[j+2]];if(a[j+2]>=5)small+=a[j+1];break;}
-      if(zone[v]>=0&&zone[v]!==zone[u]&&v!==dst)hit.push(zone[v]);
-    }
-    return {path,len,time,small,signals:hit};
-  }
-  return {build,nearest,zones,route,hav,CLASSES};
-})();
-if(typeof module!=='undefined')module.exports=Core;
-</script>
-
-<script>
-{
-const $=id=>document.getElementById(id);
-const DEF=[31.27,75.52,31.38,75.65]; // Jalandhar s,w,n,e
-const CENTER=[31.325,75.585];
-const MODES={
-  best:{name:'Best route',short:'Best',color:'#1f9d55',bg:'var(--green)'},
-  gali:{name:'Through galiyan',short:'Galiyan',color:'#e8590c',bg:'#c2410c'},
-  short:{name:'Shortest',short:'Shortest',color:'#3a6fd8',bg:'var(--blue)'},
-  few:{name:'Fewest red lights',short:'No lights',color:'#8a4fd8',bg:'#6a3fbf'}
-};
-// km/h by road class: motorway,trunk,primary,secondary,tertiary | unclassified,residential,living_street,service,road
-const BASE={car:[60,45,35,30,25,20,16,10,10,15],bike:[50,40,32,28,24,22,20,16,15,18]};
-// main-road slowdown by traffic level (classes 0-4); small streets are not slowed
-const TRAFFIC={light:[1,1,1,1,1],normal:[.9,.8,.8,.85,.9],heavy:[.7,.5,.5,.55,.7]};
-function autoTraffic(d=new Date()){const m=d.getHours()*60+d.getMinutes(),sun=d.getDay()===0;
-  if(m<7*60||m>=23*60)return 'light';
-  if(!sun&&((m>=8*60+30&&m<11*60)||(m>=17*60&&m<20*60+30)))return 'heavy';
-  return 'normal';}
-const trafficNow=()=>opt.traffic==='auto'?autoTraffic():opt.traffic;
-function speeds(galiBias){const b=BASE[opt.vehicle],t=TRAFFIC[trafficNow()];return b.map((v,i)=>v*(i<5?t[i]*(galiBias?0.55:1):1)/3.6);}
-let opt={vehicle:'car',traffic:'auto'};
-let G=null,Z=null,A=null,B=null,results={},sel='best',editMode=false,bbox=DEF,dataNote='';
-let fixes={add:[],del:[]},shared={add:[],del:[]};
-const store={get(k,d){try{const v=localStorage.getItem(k);return v==null?d:JSON.parse(v);}catch(e){return d;}},set(k,v){try{localStorage.setItem(k,JSON.stringify(v));}catch(e){}}};
-fixes=store.get('gr-fixes',fixes);
-opt=Object.assign(opt,store.get('gr-opt',{}));
-$('wait').value=store.get('gr-wait',45);$('wv').textContent=$('wait').value+' s';
-$('likely').checked=store.get('gr-likely',true);
-
-const esc=s=>String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
-const status=(t,err)=>{$('status').textContent=t;$('status').className=err?'err':'';};
-let tt;const toast=t=>{const e=$('toast');e.textContent=t;e.classList.add('show');clearTimeout(tt);tt=setTimeout(()=>e.classList.remove('show'),2600);};
-const hint=t=>{const h=$('hint');h.hidden=!t;h.textContent=t||'';};
-const isPhone=()=>matchMedia('(max-width:760px)').matches;
-
-/* ---------- map ---------- */
-const map=L.map('map',{preferCanvas:true,zoomControl:!('ontouchstart' in window)}).setView(CENTER,13);
-let sized=false;const mro=new ResizeObserver(()=>{map.invalidateSize();if(!sized&&map.getSize().x>50){sized=true;map.setView(CENTER,13);}});mro.observe($('map'));
-L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png',{maxZoom:19,attribution:'&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'}).addTo(map);
-const sigLayer=L.layerGroup().addTo(map),routeLayer=L.layerGroup().addTo(map),meLayer=L.layerGroup().addTo(map);
-const pin=(c,t)=>L.divIcon({className:'',html:`<div style="width:26px;height:26px;border-radius:50%;background:${c};border:3px solid #fff;box-shadow:0 2px 6px #0006;color:#fff;font:800 12px/20px system-ui;text-align:center">${t}</div>`,iconSize:[26,26],iconAnchor:[13,13]});
-let mA=null,mB=null;
-
-/* ---------- data ---------- */
-const idb=()=>new Promise((res,rej)=>{try{const r=indexedDB.open('greenroute',1);r.onupgradeneeded=()=>r.result.createObjectStore('osm');r.onsuccess=()=>res(r.result);r.onerror=()=>rej(r.error);}catch(e){rej(e);}});
-async function cacheGet(k){try{const db=await idb();return await new Promise(r=>{const q=db.transaction('osm').objectStore('osm').get(k);q.onsuccess=()=>r(q.result);q.onerror=()=>r(null);});}catch(e){return null;}}
-async function cachePut(k,v){try{const db=await idb();db.transaction('osm','readwrite').objectStore('osm').put(v,k);}catch(e){}}
-function fromCompact(c){const els=[],N=c.n.length/2;for(let i=0;i<N;i++)els.push({type:'node',id:i,lat:c.n[2*i]/1e6,lon:c.n[2*i+1]/1e6});for(const s of c.s)els.push({type:'node',id:s,lat:c.n[2*s]/1e6,lon:c.n[2*s+1]/1e6,tags:{highway:'traffic_signals'}});for(const w of c.w)els.push({type:'way',nodes:w.slice(2),tags:{highway:c.hw[w[0]]||'residential',oneway:w[1]===1?'yes':w[1]===-1?'-1':'no'}});return els;}
-
-async function loadArea(b){
-  const bb=b.map(x=>x.toFixed(4)).join(','),key='v1:'+bb;
-  let data=null;
-  if(b===DEF){
-    try{const r=await fetch('data/jalandhar.json',{cache:'no-cache'});if(r.ok){const c=await r.json();data={elements:fromCompact(c)};dataNote='Map data from '+new Date(c.updated).toLocaleDateString('en-IN',{day:'numeric',month:'short'})+'.';}}catch(e){console.warn('saved data',e);}
-  }
-  if(!data){const c=await cacheGet(key);if(c&&Date.now()-c.t<7*864e5)data=c.d;}
-  if(!data){
-    const q=`[out:json][timeout:120];way["highway"~"^(motorway|trunk|primary|secondary|tertiary|unclassified|residential|living_street|service|road|motorway_link|trunk_link|primary_link|secondary_link|tertiary_link)$"]["access"!~"^(private|no)$"]["motor_vehicle"!="no"]["area"!="yes"]["service"!~"^(parking_aisle|driveway|drive-through|emergency_access)$"](${bb})->.r;.r out body qt;node(w.r);out skel qt;(node["highway"="traffic_signals"](${bb});node["crossing"="traffic_signals"](${bb}););out body qt;`;
-    const eps=['https://maps.mail.ru/osm/tools/overpass/api/interpreter','https://overpass.private.coffee/api/interpreter','https://overpass.kumi.systems/api/interpreter','https://overpass-api.de/api/interpreter'];
-    for(let round=0;round<2&&!data;round++)for(const ep of eps){
-      try{
-        status('Downloading roads for this area (can take a minute)…');
-        const ctl=new AbortController(),tm=setTimeout(()=>ctl.abort(),90000);
-        const r=await fetch(ep,{method:'POST',body:'data='+encodeURIComponent(q),headers:{'Content-Type':'application/x-www-form-urlencoded'},signal:ctl.signal});
-        clearTimeout(tm);if(!r.ok)throw new Error(r.status);
-        data=await r.json();dataNote='';break;
-      }catch(e){console.warn('overpass',ep,e);}
-    }
-    if(!data){status('The free map servers are busy. Try "Load roads for this map view" again in a minute.',true);return;}
-    cachePut(key,{t:Date.now(),d:data});
-  }
-  try{const r=await fetch('data/signals-extra.json',{cache:'no-cache'});if(r.ok){const j=await r.json();shared={add:j.add||[],del:j.del||[]};}}catch(e){}
-  status('Getting the road network ready…');
-  await new Promise(r=>setTimeout(r,20));
-  G=Core.build(data);bbox=b;
-  applySignals();
-  if(!fromHash()&&!A)hint(isPhone()?'Tap the map where you are starting':'Tap the map to set your start, or search above');
-  ready();
-  if(A&&B)go();
-}
-function ready(){
-  const sure=Z.clusters.filter(c=>c.kind==='sure').length,lk=Z.clusters.length-sure;
-  if(!A||!B)status(`${sure} confirmed and ${lk} likely red lights mapped. ${dataNote}`);
-}
-
-function applySignals(){
-  const kinds=new Map();
-  for(const s of G.osmSig)kinds.set(s,'sure');
-  if($('likely').checked)for(const s of G.likely)if(!kinds.has(s))kinds.set(s,'likely');
-  const allDel=[...shared.del,...fixes.del],allAdd=[...shared.add,...fixes.add];
-  for(const [la,lo] of allDel)for(const s of [...kinds.keys()])if(Core.hav(G.lat[s],G.lon[s],la,lo)<45)kinds.delete(s);
-  for(const [la,lo] of allAdd){const n=Core.nearest(G,la,lo,true);if(n&&n.m<40)kinds.set(n.i,'sure');}
-  Z=Core.zones(G,kinds);
-  drawSignals();
-}
-function drawSignals(){
-  sigLayer.clearLayers();
-  const r=editMode?8:5;
-  for(const c of Z.clusters)L.circleMarker([c.lat,c.lon],{radius:c.kind==='sure'?r:r-1,color:'#fff',weight:1.5,fillColor:c.kind==='sure'?'#e5383b':'#f2a516',fillOpacity:1,interactive:false}).addTo(sigLayer);
-}
-
-/* ---------- trip ---------- */
-function setPoint(which,ll,label,noGo){
-  ll=L.latLng(ll);
-  const make=(c,t,cb)=>{const m=L.marker(ll,{icon:pin(c,t),draggable:true,autoPan:true}).addTo(map);m.on('dragend',()=>{cb(m.getLatLng());go();});return m;};
-  if(which==='A'){A=ll;if(mA)mA.setLatLng(ll);else mA=make('#1f9d55','A',p=>{A=p;$('qA').value='Pinned spot';});$('qA').value=label||'Pinned spot';}
-  else{B=ll;if(mB)mB.setLatLng(ll);else mB=make('#e5383b','B',p=>{B=p;$('qB').value='Pinned spot';});$('qB').value=label||'Pinned spot';}
-  if(!A)hint('Now set where you are starting');else if(!B)hint(isPhone()?'Now tap where you are going':'Now tap your destination, or search above');else hint('');
-  if(!noGo)go();
-}
-
-function go(){
-  routeLayer.clearLayers();results={};$('result').innerHTML='';
-  if(!G||!A||!B){updateHash();return;}
-  const s=Core.nearest(G,A.lat,A.lng,true),d=Core.nearest(G,B.lat,B.lng,true);
-  if(!s||!d||s.m>800||d.m>800){status('That spot is outside the loaded area. Move the map there and use "Load roads for this map view" in Settings.',true);return;}
-  if(s.i===d.i){status('Start and destination are the same spot.',true);return;}
-  const W=+$('wait').value,sp=speeds(false),gsp=speeds(true);
-  const best=Core.route(G,Z,s.i,d.i,'time',W,sp,sp);
-  if(!best){status('No drivable route found between these spots (one-way roads may block it).',true);return;}
-  results={best,gali:Core.route(G,Z,s.i,d.i,'time',W*1.5,gsp,sp),short:Core.route(G,Z,s.i,d.i,'short',0,sp,sp),few:Core.route(G,Z,s.i,d.i,'time',900,sp,sp)};
-  if(!results[sel])sel='best';
-  status('Tap another option to compare. Drag A or B to adjust.');
-  updateHash();
-  render();
-  const bnd=L.latLngBounds([[A.lat,A.lng],[B.lat,B.lng]]);
-  if(isPhone()||!map.getBounds().pad(-0.1).contains(bnd))map.fitBounds(bnd,{padding:isPhone()?[40,40]:[60,60],paddingBottomRight:isPhone()?[30,Math.round($('panel').offsetHeight+30)]:[60,60]});
-}
-
-const mins=r=>Math.max(1,Math.round((r.time+r.signals.length*+$('wait').value)/60));
-const km=r=>(r.len/1000).toFixed(r.len<10000?1:0);
-const galiPct=r=>Math.round(100*r.small/Math.max(1,r.len));
-const lights=n=>n===0?'no red lights':n===1?'1 red light':n+' red lights';
-
-function render(){
-  routeLayer.clearLayers();
-  const ids=Object.keys(MODES).filter(k=>results[k]);
-  for(const id of [...ids].sort((a,b)=>(a===sel)-(b===sel))){
-    const r=results[id],ll=r.path.map(i=>[G.lat[i],G.lon[i]]),on=id===sel;
-    L.polyline(ll,{color:'#fff',weight:on?11:6,opacity:on?.95:.6,interactive:false}).addTo(routeLayer);
-    L.polyline(ll,{color:MODES[id].color,weight:on?7:4,opacity:on?1:.55}).on('click',()=>{sel=id;render();}).addTo(routeLayer);
-  }
-  const cur=results[sel];
-  for(const z of new Set(cur.signals)){const c=Z.clusters[z];L.circleMarker([c.lat,c.lon],{radius:9,color:'#fff',weight:2.5,fillColor:c.kind==='sure'?'#e5383b':'#f2a516',fillOpacity:1}).bindTooltip(c.kind==='sure'?'Red light on this route':'Likely red light on this route').addTo(routeLayer);}
-  // Why this route, compared with the shortest
-  const sh=results.short;let why='';
-  if(sel==='short')why=`The least distance. ${cur.signals.length?'Expect '+lights(cur.signals.length)+'.':'No red lights on the way.'}`;
-  else{
-    const ds=sh.signals.length-cur.signals.length,dk=(cur.len-sh.len)/1000,dm=mins(sh)-mins(cur);
-    if(ds<=0&&Math.abs(dk)<0.05)why='Same as the shortest route, and already the quickest.';
-    else if(ds>0)why=`Skips ${ds} red light${ds>1?'s':''} compared with the shortest way, for ${dk>0.05?dk.toFixed(1)+' km more':'about the same distance'}${dm>0?' and saves about '+dm+' min':dm<0?' (about '+(-dm)+' min slower)':''}.`;
-    else why=`${dk>0.05?dk.toFixed(1)+' km longer than the shortest, but quicker':'Quickest option'}.`;
-  }
-  if(sel==='gali'){const b=results.best,dm=mins(b)-mins(cur),ds=b.signals.length-cur.signals.length;
-    why=(ds>0?`${ds} fewer red light${ds>1?'s':''} than the best route`:cur.signals.length?`Same red lights as the best route`:`No red lights`)+(dm>0?`, about ${dm} min quicker.`:dm<0?`, about ${-dm} min slower.`:', about the same time.')+' Lanes can be narrow, go slow.';}
-  const same={};for(const id of ids){const k=results[id].path.length+'|'+results[id].len.toFixed(0);same[id]=ids.find(j=>results[j].path.length+'|'+results[j].len.toFixed(0)===k);}
-  $('result').innerHTML=`
-    <div class="hero" style="background:${MODES[sel].bg}">
-      <div class="k">${esc(MODES[sel].name)}${sel==='best'?' · recommended':''}</div>
-      <div class="t">${mins(cur)} min<small>${km(cur)} km · ${lights(cur.signals.length)}</small></div>
-      <div class="g">${galiPct(cur)}% through galiyan</div>
-      <div class="why">${esc(why)}</div>
-      <div class="acts"><a id="nav" href="${navUrl(cur)}" target="_blank" rel="noopener">Start in Google Maps</a><button id="share">Share</button></div>
-    </div>
-    <div class="alts">${ids.map(id=>{const r=results[id];const dup=same[id]!==id;return `<button class="alt${id===sel?' sel':''}" data-id="${id}"><i style="background:${MODES[id].color}"></i><b>${esc(MODES[id].short)}</b><span>${dup?'same as '+esc(MODES[same[id]].short):mins(r)+' min · '+r.signals.length+(r.signals.length===1?' light':' lights')}</span></button>`;}).join('')}</div>`;
-  for(const b of document.querySelectorAll('.alt'))b.onclick=()=>{sel=b.dataset.id;render();};
-  $('share').onclick=share;
-  $('panel').classList.remove('min');
-}
-
-function navUrl(r){
-  const p=r.path,n=Math.min(8,Math.max(0,Math.floor(r.len/500)));
-  const smallIdx=[];for(let k=1;k<p.length-1;k++){const a=G.adj[p[k-1]];for(let j=0;j<a.length;j+=3)if(a[j]===p[k]){if(a[j+2]>=5)smallIdx.push(k);break;}}
-  const pool=smallIdx.length>=n?smallIdx:p.map((_,k)=>k).slice(1,-1);
-  const wp=[];for(let k=1;k<=n&&pool.length;k++){const i=p[pool[Math.floor(k*(pool.length-1)/(n+1))]];wp.push(G.lat[i].toFixed(5)+','+G.lon[i].toFixed(5));}
-  const f=x=>x.lat.toFixed(5)+','+x.lng.toFixed(5);
-  return `https://www.google.com/maps/dir/?api=1&origin=${f(A)}&destination=${f(B)}${wp.length?'&waypoints='+encodeURIComponent(wp.join('|')):''}&travelmode=driving`;
-}
-
-/* ---------- share link (#a=lat,lon&b=lat,lon&an=..&bn=..) ---------- */
-function updateHash(){
-  if(!A||!B){if(location.hash)history.replaceState(null,'',location.pathname+location.search);return;}
-  const p=new URLSearchParams({a:A.lat.toFixed(5)+','+A.lng.toFixed(5),b:B.lat.toFixed(5)+','+B.lng.toFixed(5),an:$('qA').value,bn:$('qB').value});
-  history.replaceState(null,'','#'+p.toString());
-}
-function fromHash(){
-  if(!location.hash.includes('a='))return false;
-  const p=new URLSearchParams(location.hash.slice(1)),pa=(p.get('a')||'').split(',').map(Number),pb=(p.get('b')||'').split(',').map(Number);
-  if(pa.length!==2||pb.length!==2||pa.some(isNaN)||pb.some(isNaN))return false;
-  setPoint('A',pa,p.get('an')||'',true);setPoint('B',pb,p.get('bn')||'',true);
-  map.fitBounds([pa,pb],{padding:[50,50]});
-  return true;
-}
-async function share(){
-  const r=results[sel],url=location.href;
-  const text=`${$('qA').value||'Start'} → ${$('qB').value||'Destination'}: ${mins(r)} min, ${km(r)} km, ${lights(r.signals.length)} (Green Route)`;
-  if(navigator.share){try{await navigator.share({title:'Green Route',text,url});return;}catch(e){if(e.name==='AbortError')return;}}
-  try{await navigator.clipboard.writeText(text+'\n'+url);toast('Link copied. Paste it in WhatsApp.');}
-  catch(e){location.href='https://wa.me/?text='+encodeURIComponent(text+'\n'+url);}
-}
-
-/* ---------- search: Photon (type-ahead) + Nominatim (after a pause), Jalandhar first ---------- */
-const ROMAN={1:'i',2:'ii',3:'iii',4:'iv',5:'v',6:'vi',7:'vii',8:'viii',9:'ix',10:'x'};
-function variants(q){
-  const base=q.replace(/[,\s]*(jalandhar|jullundur)(\s*city)?\s*$/i,'').trim()||q;
-  const rom=base.replace(/\b(phase|ph|sector|block)\s*\.?\s*(\d{1,2})\b/gi,(m,w,n)=>`${w} ${ROMAN[n]||n}`);
-  const noNum=base.replace(/\b(phase|ph)\s*\.?\s*(\d{1,2}|[ivx]+)\b/gi,'').replace(/\s+/g,' ').trim();
-  return [...new Set([base,rom,noNum].filter(x=>x&&x.length>1))];
-}
-const distC=(la,lo)=>Core.hav(la,lo,CENTER[0],CENTER[1]);
-function setupSearch(which){
-  const inp=$('q'+which),drop=$('d'+which);let t1,t2,ctl,items=[],seq=0;
-  const show=html=>{drop.innerHTML=html;drop.hidden=!html;};
-  const pick=i=>{const it=items[i];if(!it)return;show('');inp.blur();setPoint(which,[it.lat,it.lon],it.name);map.panTo([it.lat,it.lon]);};
-  const locBtn=which==='A'?'<button class="loc" data-loc="1">◎ Use my current location</button>':'';
-  const draw=()=>{show(items.length?items.slice(0,7).map((it,i)=>`<button data-i="${i}"><b>${esc(it.name)}</b><small>${esc(it.sub)}</small></button>`).join(''):'<button disabled><small>Searching…</small></button>');};
-  const add=list=>{
-    for(const it of list){
-      if(distC(it.lat,it.lon)>40000)continue;
-      if(items.some(x=>x.name===it.name&&Core.hav(x.lat,x.lon,it.lat,it.lon)<300))continue;
-      items.push(it);
-    }
-    // places in Jalandhar city (within ~9 km of the centre) first, keep search order otherwise
-    items=items.map((x,k)=>({x,k,f:distC(x.lat,x.lon)<9000?0:1})).sort((a,b)=>a.f-b.f||a.k-b.k).map(o=>o.x);
-  };
-  async function photon(q,sig){
-    const j=await (await fetch(`https://photon.komoot.io/api/?q=${encodeURIComponent(q)}&lat=${CENTER[0]}&lon=${CENTER[1]}&limit=6&lang=en&bbox=75.3,31.1,75.85,31.55`,{signal:sig})).json();
-    return j.features.map(f=>{const p=f.properties;const sub=[p.street,p.district||p.locality,p.city||p.county].filter(Boolean).filter((v,i,a)=>a.indexOf(v)===i&&v!==p.name).join(', ');return {name:p.name||p.street||'Place',sub,lat:f.geometry.coordinates[1],lon:f.geometry.coordinates[0]};});
-  }
-  async function nominatim(q,sig){
-    const n=await (await fetch(`https://nominatim.openstreetmap.org/search?format=json&limit=6&countrycodes=in&bounded=1&viewbox=75.3,31.55,75.85,31.1&q=${encodeURIComponent(q)}`,{signal:sig})).json();
-    return n.map(x=>{const parts=x.display_name.split(',').map(s=>s.trim());return {name:parts[0],sub:parts.slice(1,4).join(', '),lat:+x.lat,lon:+x.lon};});
-  }
-  inp.addEventListener('focus',()=>{inp.select();if(!inp.value||inp.value==='Pinned spot'||inp.value==='My location')show(locBtn);});
-  inp.addEventListener('blur',()=>setTimeout(()=>show(''),200));
-  inp.addEventListener('input',()=>{
-    clearTimeout(t1);clearTimeout(t2);const q=inp.value.trim();
-    if(q.length<2){show(locBtn);return;}
-    const my=++seq;
-    t1=setTimeout(async()=>{
-      if(ctl)ctl.abort();ctl=new AbortController();const sig=ctl.signal;items=[];
-      const vs=variants(q);
-      await Promise.all(vs.map(v=>photon(v,sig).then(r=>{if(my===seq){add(r);draw();}}).catch(()=>{})));
-      if(my!==seq)return;
-      // one Nominatim lookup after the user pauses (its rules allow 1 request per second)
-      t2=setTimeout(async()=>{
-        try{const r=await nominatim(vs[1]||vs[0],sig);if(my===seq){add(r);if(!r.length&&vs[2]&&vs[2]!==vs[0])add(await nominatim(vs[2],sig));}}catch(e){}
-        if(my===seq){if(items.length)draw();else show('<button disabled><small>No places found. Try a nearby landmark, or tap the map.</small></button>');}
-      },items.length?900:500);
-    },250);
-  });
-  inp.addEventListener('keydown',e=>{if(e.key==='Enter'){e.preventDefault();pick(0);}if(e.key==='Escape')show('');});
-  drop.addEventListener('pointerdown',e=>e.preventDefault());
-  drop.addEventListener('click',e=>{const b=e.target.closest('button');if(!b||b.disabled)return;if(b.dataset.loc){show('');inp.blur();locate(true);}else pick(+b.dataset.i);});
-}
-setupSearch('A');setupSearch('B');
-
-/* ---------- my location ---------- */
-function locate(asStart){
-  if(!navigator.geolocation){toast('Location is not available in this browser.');return;}
-  toast('Finding you…');
-  navigator.geolocation.getCurrentPosition(p=>{
-    const ll=L.latLng(p.coords.latitude,p.coords.longitude);
-    meLayer.clearLayers();L.circleMarker(ll,{radius:8,color:'#fff',weight:3,fillColor:'#3a6fd8',fillOpacity:1}).addTo(meLayer);
-    if(asStart)setPoint('A',ll,'My location');
-    map.setView(ll,Math.max(map.getZoom(),15));
-  },()=>toast('Could not get your location. Allow location access, or tap the map.'),{enableHighAccuracy:true,timeout:10000});
-}
-$('locA').onclick=()=>locate(true);
-$('me').onclick=()=>locate(false);
-
-/* ---------- map taps ---------- */
-map.on('click',e=>{
-  if(editMode){toggleSignal(e.latlng);return;}
-  if(!A)setPoint('A',e.latlng);else setPoint('B',e.latlng);
-});
-function toggleSignal(ll){
-  if(!G)return;
-  const near=Z.clusters.findIndex(c=>Core.hav(c.lat,c.lon,ll.lat,ll.lng)<40);
-  if(near>=0){
-    const c=Z.clusters[near];
-    fixes.add=fixes.add.filter(([a,o])=>Core.hav(a,o,c.lat,c.lon)>=45);
-    fixes.del.push([+c.lat.toFixed(6),+c.lon.toFixed(6)]);
-    toast('Red light removed');
-  }else{
-    const n=Core.nearest(G,ll.lat,ll.lng,true);
-    if(!n||n.m>40){toast('Tap closer to a road junction');return;}
-    fixes.del=fixes.del.filter(([a,o])=>Core.hav(a,o,G.lat[n.i],G.lon[n.i])>=45);
-    fixes.add.push([+G.lat[n.i].toFixed(6),+G.lon[n.i].toFixed(6)]);
-    toast('Red light added');
-  }
-  store.set('gr-fixes',fixes);
-  applySignals();go();
-}
-
-/* ---------- controls ---------- */
-$('edit').onclick=()=>{editMode=!editMode;$('edit').classList.toggle('on',editMode);$('edit').textContent=editMode?'Done fixing':'Fix red lights';if(G)drawSignals();hint(editMode?'Tap a dot to remove it, or a junction to add a red light':'');if(editMode&&isPhone())$('panel').classList.add('min');};
-$('copyfix').onclick=async()=>{const t=JSON.stringify(fixes);try{await navigator.clipboard.writeText(t);toast(`Copied ${fixes.add.length} added, ${fixes.del.length} removed`);}catch(e){status('Copy was blocked. Your fixes: '+t);}};
-$('wait').oninput=()=>{$('wv').textContent=$('wait').value+' s';};
-$('wait').onchange=()=>{store.set('gr-wait',+$('wait').value);go();};
-$('likely').onchange=()=>{store.set('gr-likely',$('likely').checked);if(G){applySignals();ready();go();}};
-$('swap').onclick=()=>{if(!A||!B)return;const a=A,qa=$('qA').value,qb=$('qB').value;setPoint('A',B,qb,true);setPoint('B',a,qa,true);go();};
-$('clear').onclick=()=>{A=B=null;if(mA)map.removeLayer(mA);if(mB)map.removeLayer(mB);mA=mB=null;$('qA').value=$('qB').value='';go();ready();hint('Tap the map to set your start');};
-$('area').onclick=()=>{const b=map.getBounds(),s=[b.getSouth(),b.getWest(),b.getNorth(),b.getEast()];if((s[2]-s[0])*(s[3]-s[1])>0.04){toast('Zoom in to about one town first');return;}loadArea(s);};
-function drawOpts(){
-  for(const b of $('vehSeg').children)b.classList.toggle('on',b.dataset.v===opt.vehicle);
-  $('trSel').options[0].textContent='Auto: '+autoTraffic();$('trSel').value=opt.traffic;
-}
-$('vehSeg').onclick=e=>{const b=e.target.closest('button');if(!b)return;opt.vehicle=b.dataset.v;store.set('gr-opt',opt);drawOpts();go();};
-$('trSel').onchange=()=>{opt.traffic=$('trSel').value;store.set('gr-opt',opt);drawOpts();go();};
-drawOpts();
-$('handle').onclick=()=>$('panel').classList.toggle('min');
-
-/* ---------- install as app ---------- */
-let deferred=null;
-addEventListener('beforeinstallprompt',e=>{e.preventDefault();deferred=e;$('install').hidden=false;});
-$('install').onclick=async()=>{if(!deferred)return;deferred.prompt();await deferred.userChoice;deferred=null;$('install').hidden=true;};
-if('serviceWorker' in navigator)navigator.serviceWorker.register('sw.js').catch(()=>{});
-
-loadArea(DEF);
-}
-</script>
+<script src="js/i18n.js"></script>
+<script src="js/core.js"></script>
+<script src="js/app.js"></script>
 </body>
 </html>
