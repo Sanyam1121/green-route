@@ -1,0 +1,38 @@
+name: Update places (Overture Maps)
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths: ['scripts/overture_places.py', '.github/workflows/overture-places.yml']
+  schedule:
+    - cron: '41 22 1 * *' # monthly, 2nd of the month 04:11 IST
+
+permissions:
+  contents: write
+
+concurrency:
+  group: update-data
+  cancel-in-progress: false
+
+jobs:
+  places:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: pip install duckdb==1.1.3
+      - name: Add Overture places to the city place lists
+        run: python scripts/overture_places.py
+      - name: Commit if changed
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add data
+          if git diff --cached --quiet; then echo "No changes"; exit 0; fi
+          git commit -m "Update places from Overture Maps"
+          git pull --rebase origin main
+          git push

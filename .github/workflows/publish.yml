@@ -4,7 +4,7 @@ on:
   push:
     branches: [main]
   workflow_run:
-    workflows: ["Update map data"]
+    workflows: ["Update map data", "Update places (Overture Maps)"]
     types: [completed]
   workflow_dispatch:
 
