@@ -32,6 +32,9 @@ jobs:
       - name: Add Overture Maps places
         continue-on-error: true
         run: pip install duckdb==1.1.3 overturemaps && python scripts/overture_places.py
+      - name: Estimate street widths (roads changed, so widths must be redone)
+        continue-on-error: true
+        run: pip install shapely numpy pyarrow && python scripts/lane_widths.py
       - name: Commit data if it changed
         if: always()
         run: |
