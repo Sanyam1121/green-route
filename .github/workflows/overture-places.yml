@@ -12,7 +12,7 @@ permissions:
   contents: write
 
 concurrency:
-  group: update-data
+  group: overture-places
   cancel-in-progress: false
 
 jobs:
