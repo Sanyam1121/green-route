@@ -420,7 +420,21 @@
     PL = [];
     try {
       const j = await getJSON(`data/v3/${name}-places.json`);
-      PL = j.p.map(p => { const key = norm(p[0] + ' ' + (p[4] || '')); return { n: p[0], la: p[1], lo: p[2], ty: p[3], st: p[5] || '', key, tok: key.split(' '), sk: key.split(' ').map(skel) }; });
+      const mk = (n, la, lo, ty, alt, st) => { const key = norm(n + ' ' + (alt || '')); return { n, la, lo, ty, st: st || '', key, tok: key.split(' '), sk: key.split(' ').map(skel) }; };
+      PL = j.p.map(p => mk(p[0], p[1], p[2], p[3], p[4], p[5]));
+      // Localities and streets that only appear in shop/clinic addresses (e.g. "Urban Estate Phase II") become searchable too
+      const have = new Set(PL.map(p => norm(p.n))), groups = new Map();
+      for (const p of PL) {
+        if (!p.st) continue;
+        const nm = String(p.st).split(',')[0].replace(/\b(jalandhar|ludhiana|amritsar|phagwara|punjab)\b.*$/i, '').trim();
+        if (nm.length < 4 || /^\d+$/.test(nm) || /^(near|opp|opposite|behind|beside|in front|nr\.?|h\.? ?no|house|shop|plot|sco|#)\b/i.test(nm) || have.has(norm(nm))) continue;
+        const g = groups.get(norm(nm)) || { n: nm, pts: [] }; g.pts.push([p.la, p.lo]); groups.set(norm(nm), g);
+      }
+      for (const g of groups.values()) {
+        const la = g.pts.reduce((a, x) => a + x[0], 0) / g.pts.length, lo = g.pts.reduce((a, x) => a + x[1], 0) / g.pts.length;
+        if (g.pts.some(x => Core.hav(la, lo, x[0], x[1]) > 3000)) continue;
+        PL.push(mk(g.n, +la.toFixed(5), +lo.toFixed(5), /\b(road|rd|marg|bazar|bazaar|chowk|street|gali)\b/i.test(g.n) ? 'road' : 'area', '', ''));
+      }
     } catch (e) { }
   }
   // Devanagari / Gurmukhi → rough Latin, so "मॉडल टाउन" can match "Model Town"

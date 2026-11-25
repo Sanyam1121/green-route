@@ -1,5 +1,5 @@
 // Offline support: app shell cache-first, map data network-first, map tiles cached as you browse.
-const V = 'gr-v6';
+const V = 'gr-v7';
 const SHELL = ['./', 'index.html', 'css/style.css', 'js/i18n.js', 'js/core.js', 'js/app.js', 'manifest.webmanifest', 'icons/icon-192.png', 'icons/icon.svg',
   'https://unpkg.com/leaflet@1.9.4/dist/leaflet.css', 'https://unpkg.com/leaflet@1.9.4/dist/leaflet.js'];
 self.addEventListener('install', e => { e.waitUntil(caches.open(V).then(c => c.addAll(SHELL)).then(() => self.skipWaiting())); });
