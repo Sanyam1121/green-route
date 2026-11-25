@@ -479,6 +479,9 @@
         }
         if (!ok) continue;
         if (p.key.startsWith(qn)) score += 2;
+        const nn = norm(p.n), nsk = nn.split(' ').map(skel).join(' '), qskj = qsk.join(' ');
+        if (nn === qn || (qskj.replace(/ /g, '') && nsk === qskj)) score += 4; // the whole name matches exactly
+        else if (p.tok.length > qt.length) score -= 0.4 * (p.tok.length - qt.length);
         if (['area', 'market', 'train', 'bus', 'hospital', 'college', 'road'].includes(p.ty)) score += 0.7;
         const dkm = Core.hav(here[0], here[1], p.la, p.lo) / 1000;
         score -= Math.min(2, dkm / 6) + p.n.length / 80;
