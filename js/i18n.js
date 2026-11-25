@@ -1,6 +1,10 @@
 /* Green Route translations: English, Hindi, Punjabi. Values are strings with {vars} or functions of vars. */
 var I18N = (function () {
   const en = {
+    chowks_lbl: 'Show chowks', chowks_sub: 'Every major junction and roundabout, with its name where known. Tap one to route there or to name it.',
+    ty_chowk: 'Chowk', roundabout: 'Roundabout chowk', unnamed_chowk: 'Chowk (name not known)', route_here: 'Route here', start_here: 'Start from here',
+    name_chowk: 'Name this chowk', rename_chowk: 'Fix the name', chowk_name_ph: 'e.g. Jyoti Chowk', chowk_saved: 'Saved: {n}',
+    via: 'Via {list}', at_chowk: 'At {c}, {a}', v_light_at: 'Red light at {c} ahead',
     widths_lbl: 'Show street widths', widths_sub: 'Estimated from the gap between buildings. Red: under 3.5 m (bike or walk only) · Orange: 3.5–5 m, one car at a time · Green: wider. Car routes avoid red lanes.',
     tight_warn: 'Has {k} km of tight lanes (narrowest about {w} m). One car at a time.', v_tight: 'Narrow lane ahead, about {w} metres wide. Go slow.',
     only_narrow: 'The only way in for a car is through a very narrow lane. Check before driving in.', width_tip: 'About {w} m wide (estimate)',
@@ -83,6 +87,10 @@ var I18N = (function () {
   };
 
   const hi = {
+    chowks_lbl: 'चौक दिखाएँ', chowks_sub: 'हर बड़ा चौराहा और गोल चक्कर, जहाँ पता है वहाँ नाम के साथ। रास्ते या नाम देने के लिए टैप करें।',
+    ty_chowk: 'चौक', roundabout: 'गोल चक्कर चौक', unnamed_chowk: 'चौक (नाम पता नहीं)', route_here: 'यहाँ का रास्ता', start_here: 'यहाँ से शुरू करें',
+    name_chowk: 'इस चौक का नाम दें', rename_chowk: 'नाम ठीक करें', chowk_name_ph: 'जैसे ज्योति चौक', chowk_saved: 'सेव हुआ: {n}',
+    via: '{list} होकर', at_chowk: '{c} पर {a}', v_light_at: 'आगे {c} पर रेड लाइट है',
     widths_lbl: 'गली की चौड़ाई दिखाएँ', widths_sub: 'इमारतों के बीच की दूरी से अनुमान। लाल: 3.5 मी से कम (सिर्फ़ बाइक या पैदल) · नारंगी: 3.5–5 मी, एक समय में एक कार · हरा: चौड़ी। कार के रास्ते लाल गलियों से बचते हैं।',
     tight_warn: 'इसमें {k} किमी तंग गलियाँ हैं (सबसे तंग लगभग {w} मी)। एक समय में एक कार।', v_tight: 'आगे तंग गली है, लगभग {w} मीटर चौड़ी। धीरे चलें।',
     only_narrow: 'कार के लिए अंदर जाने का रास्ता बहुत तंग गली से ही है। जाने से पहले देख लें।', width_tip: 'लगभग {w} मी चौड़ी (अनुमान)',
@@ -165,6 +173,10 @@ var I18N = (function () {
   };
 
   const pa = {
+    chowks_lbl: 'ਚੌਂਕ ਵਿਖਾਓ', chowks_sub: 'ਹਰ ਵੱਡਾ ਚੌਂਕ ਅਤੇ ਗੋਲ ਚੱਕਰ, ਜਿੱਥੇ ਪਤਾ ਹੈ ਉੱਥੇ ਨਾਂ ਨਾਲ। ਰਸਤੇ ਜਾਂ ਨਾਂ ਦੇਣ ਲਈ ਟੈਪ ਕਰੋ।',
+    ty_chowk: 'ਚੌਂਕ', roundabout: 'ਗੋਲ ਚੱਕਰ ਚੌਂਕ', unnamed_chowk: 'ਚੌਂਕ (ਨਾਂ ਪਤਾ ਨਹੀਂ)', route_here: 'ਇੱਥੇ ਦਾ ਰਸਤਾ', start_here: 'ਇੱਥੋਂ ਸ਼ੁਰੂ ਕਰੋ',
+    name_chowk: 'ਇਸ ਚੌਂਕ ਦਾ ਨਾਂ ਦਿਓ', rename_chowk: 'ਨਾਂ ਠੀਕ ਕਰੋ', chowk_name_ph: 'ਜਿਵੇਂ ਜੋਤੀ ਚੌਂਕ', chowk_saved: 'ਸੇਵ ਹੋਇਆ: {n}',
+    via: '{list} ਰਾਹੀਂ', at_chowk: '{c} ਤੇ {a}', v_light_at: 'ਅੱਗੇ {c} ਤੇ ਲਾਲ ਬੱਤੀ ਹੈ',
     widths_lbl: 'ਗਲੀ ਦੀ ਚੌੜਾਈ ਵਿਖਾਓ', widths_sub: 'ਇਮਾਰਤਾਂ ਵਿਚਕਾਰ ਦੀ ਦੂਰੀ ਤੋਂ ਅੰਦਾਜ਼ਾ। ਲਾਲ: 3.5 ਮੀ ਤੋਂ ਘੱਟ (ਸਿਰਫ਼ ਬਾਈਕ ਜਾਂ ਪੈਦਲ) · ਸੰਤਰੀ: 3.5–5 ਮੀ, ਇੱਕ ਸਮੇਂ ਇੱਕ ਕਾਰ · ਹਰਾ: ਚੌੜੀ। ਕਾਰ ਦੇ ਰਸਤੇ ਲਾਲ ਗਲੀਆਂ ਤੋਂ ਬਚਦੇ ਹਨ।',
     tight_warn: 'ਇਸ ਵਿੱਚ {k} ਕਿਮੀ ਭੀੜੀਆਂ ਗਲੀਆਂ ਹਨ (ਸਭ ਤੋਂ ਭੀੜੀ ਲਗਭਗ {w} ਮੀ)। ਇੱਕ ਸਮੇਂ ਇੱਕ ਕਾਰ।', v_tight: 'ਅੱਗੇ ਭੀੜੀ ਗਲੀ ਹੈ, ਲਗਭਗ {w} ਮੀਟਰ ਚੌੜੀ। ਹੌਲੀ ਚੱਲੋ।',
     only_narrow: 'ਕਾਰ ਲਈ ਅੰਦਰ ਜਾਣ ਦਾ ਰਸਤਾ ਬਹੁਤ ਭੀੜੀ ਗਲੀ ਰਾਹੀਂ ਹੀ ਹੈ। ਜਾਣ ਤੋਂ ਪਹਿਲਾਂ ਵੇਖ ਲਓ।', width_tip: 'ਲਗਭਗ {w} ਮੀ ਚੌੜੀ (ਅੰਦਾਜ਼ਾ)',

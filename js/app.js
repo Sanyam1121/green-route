@@ -20,7 +20,7 @@
     amritsar: { bbox: [31.59, 74.81, 31.68, 74.93], center: [31.634, 74.873] },
     phagwara: { bbox: [31.20, 75.74, 31.25, 75.80], center: [31.224, 75.770] },
   };
-  const opt = Object.assign({ vehicle: 'car', traffic: 'auto', lang: 'en', theme: 'auto', voice: true, likely: true, wait: 45, city: 'jalandhar', widths: false }, store.get('gr-opt', {}));
+  const opt = Object.assign({ vehicle: 'car', traffic: 'auto', lang: 'en', theme: 'auto', voice: true, likely: true, wait: 45, city: 'jalandhar', widths: false, chowks: true }, store.get('gr-opt', {}));
   if (!CITIES[opt.city]) opt.city = 'jalandhar';
   const saveOpt = () => store.set('gr-opt', opt);
 
@@ -104,11 +104,11 @@
     photoSignals = [];
     if (!area) try { photoSignals = (await getJSON(`data/v3/${name}-signals.json`)).s || []; } catch (e) { }
     status(t('preparing')); await new Promise(r => setTimeout(r, 20));
-    if (!area) await loadPlaces(name);
+    if (!area) { await loadPlaces(name); await loadChowks(name); }
     let widths = null;
     if (!area) try { const wj = await getJSON(`data/v3/${name}-widths.json`); if (wj.roads_updated === c.updated) widths = wj.w; } catch (e) { }
     const g = Core.build(c, widths); Z = null; G = g; liveArea = area || null;
-    applySignals(); drawCams(); loadReports(); drawWidths();
+    applySignals(); drawCams(); loadReports(); drawWidths(); drawChowks();
     if (!A || !B) idle();
     if (A && B) go();
   }
@@ -306,6 +306,7 @@
         <div class="k">${esc(t('mode_' + sel))}${sel === 'best' ? ' · ' + esc(t('recommended')) : ''}</div>
         <div class="t">${mins(cur)} ${esc(t('min'))}<small>${km(cur)} km · ${esc(t('lights', { n: cur.signals.length }))}</small></div>
         <div class="g">${esc(t(motor() ? 'pct_gali' : 'pct_lanes', { n: galiPct(cur) }))}</div>
+        ${(() => { const v = chowksOnRoute(cur).slice(0, 5).map(c => c.n); return v.length ? `<div class="via">${esc(t('via', { list: v.join(' → ') }))}</div>` : ''; })()}
         <div class="why">${esc(why)}</div>${warn}${repWarn}
         <div class="acts"><button class="go" id="startNav">▶ ${esc(t('start'))}</button><button id="share">${esc(t('share'))}</button></div>
         <a class="gm" id="gmaps" href="${navUrl(cur)}" target="_blank" rel="noopener">${esc(t('open_gmaps'))}</a>
@@ -416,11 +417,12 @@
   }
 
   /* ---------------- search: local place index + online search + voice ---------------- */
-  const TYPE_ICON = { fuel: '⛽', ev: '🔌', hospital: '🏥', clinic: '🩺', pharmacy: '💊', atm: '🏧', bank: '🏦', school: '🏫', college: '🎓', restaurant: '🍽️', cafe: '☕', hotel: '🏨', police: '👮', bus: '🚌', train: '🚆', cinema: '🎬', market: '🛍️', park: '🌳', sport: '🏟️', govt: '🏛️', area: '🏘️', road: '🛣️', shop: '🏪', sight: '📍', office: '🏢', temple: '🛕', gurdwara: 'ੴ', mosque: '🕌', church: '⛪', other: '📍' };
+  const TYPE_ICON = { fuel: '⛽', ev: '🔌', hospital: '🏥', clinic: '🩺', pharmacy: '💊', atm: '🏧', bank: '🏦', school: '🏫', college: '🎓', restaurant: '🍽️', cafe: '☕', hotel: '🏨', police: '👮', bus: '🚌', train: '🚆', cinema: '🎬', market: '🛍️', park: '🌳', sport: '🏟️', govt: '🏛️', area: '🏘️', road: '🛣️', shop: '🏪', sight: '📍', office: '🏢', temple: '🛕', gurdwara: 'ੴ', mosque: '🕌', church: '⛪', chowk: '🔶', other: '📍' };
   // words that mean "find the nearest one of these" (English, Hinglish, Hindi, Punjabi)
   const CATS = {
     fuel: ['petrol pump', 'petrol', 'pump', 'fuel', 'diesel', 'cng', 'पेट्रोल पंप', 'पेट्रोल', 'ਪੈਟਰੋਲ ਪੰਪ', 'ਪੈਟਰੋਲ'],
     ev: ['ev charging', 'charging station', 'charging'],
+    chowk: ['chowk', 'chowks', 'chauk', 'chownk', 'चौक', 'ਚੌਂਕ', 'ਚੌਕ'],
     hospital: ['hospital', 'aspatal', 'haspatal', 'hospitals', 'अस्पताल', 'हॉस्पिटल', 'ਹਸਪਤਾਲ'],
     clinic: ['clinic', 'doctor', 'doctors', 'dentist', 'डॉक्टर', 'ਡਾਕਟਰ'],
     pharmacy: ['chemist', 'medical store', 'medical', 'pharmacy', 'dawai', 'dawa', 'दवाई', 'केमिस्ट', 'ਦਵਾਈ', 'ਕੈਮਿਸਟ'],
@@ -503,6 +505,7 @@
         if (nn === qn || (qskj.replace(/ /g, '') && nsk === qskj)) score += 4; // the whole name matches exactly
         else if (p.tok.length > qt.length) score -= 0.4 * (p.tok.length - qt.length);
         if (['area', 'market', 'train', 'bus', 'hospital', 'college', 'road'].includes(p.ty)) score += 0.7;
+        if (p.ty === 'chowk') score += 1.2;
         const dkm = Core.hav(here[0], here[1], p.la, p.lo) / 1000;
         score -= Math.min(2, dkm / 6) + p.n.length / 80;
         out.push({ p, score });
@@ -527,6 +530,8 @@
   }
   function nearestOfType(ty, limit = 8) {
     const here = nearRef();
+    if (ty === 'chowk') return CH.filter(c => c.n).map(c => ({ c, d: Core.hav(here[0], here[1], c.la, c.lo) })).sort((a, b) => a.d - b.d).slice(0, limit)
+      .map(x => ({ name: x.c.n, sub: t('ty_chowk') + ' · ' + distLabel(x.d), lat: x.c.la, lon: x.c.lo, icon: TYPE_ICON.chowk, local: true }));
     return PL.filter(p => p.ty === ty).map(p => ({ p, d: Core.hav(here[0], here[1], p.la, p.lo) })).sort((a, b) => a.d - b.d).slice(0, limit).map(x => placeItem(x.p, here));
   }
 
@@ -593,7 +598,7 @@
     const startMenu = () => {
       items = [];
       let h = which === 'A' ? `<button class="loc" data-loc="1">◎ ${esc(t('use_location'))}</button>` : '';
-      h += `<div class="chips">${['fuel', 'hospital', 'atm', 'pharmacy', 'gurdwara', 'temple', 'market', 'bus'].map(ty => `<button data-cat="${ty}">${TYPE_ICON[ty]} ${esc(t('ty_' + ty))}</button>`).join('')}</div>`;
+      h += `<div class="chips">${['chowk', 'fuel', 'hospital', 'atm', 'pharmacy', 'gurdwara', 'temple', 'market', 'bus'].map(ty => `<button data-cat="${ty}">${TYPE_ICON[ty]} ${esc(t('ty_' + ty))}</button>`).join('')}</div>`;
       for (const p of placeKey()) items.push({ name: p.n, sub: t('saved_place'), lat: p.la, lon: p.lo, icon: p.icon });
       for (const r of recent.filter(r => r.city === opt.city).slice(0, 4)) items.push({ name: `${r.an || t('start_pt')} → ${r.bn || t('dest_pt')}`, sub: t('recent_trip'), trip: r, icon: '🕘' });
       show(h + items.map(row).join(''));
@@ -735,7 +740,8 @@
   const ARROW = { left: { slight: '↖', turn: '↰', sharp: '↲', uturn: '↶' }, right: { slight: '↗', turn: '↱', sharp: '↳', uturn: '↷' } };
   function action(st) {
     if (st.type === 'arrive') return t('v_arrive_soon');
-    return t('a_' + st.type + '_' + st.side) + (st.gali ? ' ' + t('into_gali') : '');
+    const a = t('a_' + st.type + '_' + st.side) + (st.gali ? ' ' + t('into_gali') : '');
+    return st.chowk ? t('at_chowk', { c: st.chowk, a }) : a;
   }
   function distText(m) { return m >= 1000 ? (m / 1000).toFixed(1) + ' km' : (m < 100 ? Math.round(m / 10) * 10 : Math.round(m / 50) * 50) + ' m'; }
   function speak(text) {
@@ -749,7 +755,7 @@
   }
   function navEvents(r) {
     const ev = [];
-    r.signalAt.forEach((k, i) => ev.push({ at: r.cum[k], kind: 'light', sure: Z.clusters[r.signals[i]].kind === 'sure' }));
+    r.signalAt.forEach((k, i) => { const c = chowkAt(G.lat[r.path[k]], G.lon[r.path[k]], 80); ev.push({ at: r.cum[k], kind: 'light', sure: Z.clusters[r.signals[i]].kind === 'sure', chowk: c && c.n }); });
     for (const [la, lo] of camPoints()) { let bd = Infinity, at = 0; for (let k = 0; k < r.path.length; k++) { const d = Core.hav(la, lo, G.lat[r.path[k]], G.lon[r.path[k]]); if (d < bd) { bd = d; at = r.cum[k]; } } if (bd < 40) ev.push({ at, kind: 'cam' }); }
     for (const rep of reportsOnRoute(r)) if (['police', 'pothole', 'water', 'jam', 'block'].includes(rep.t)) ev.push({ at: rep.at, kind: 'rep', t: rep.t });
     if (opt.vehicle === 'car') for (const [k, w] of r.tightAt || []) ev.push({ at: r.cum[k], kind: 'tight', w });
@@ -757,6 +763,7 @@
   }
   function setNavRoute(r) {
     nav.r = r; nav.steps = Core.steps(G, r); nav.ev = navEvents(r); nav.k = 0; nav.off = 0;
+    for (const st of nav.steps) if (st.type !== 'arrive') { const c = chowkAt(G.lat[r.path[st.k]], G.lon[r.path[st.k]], 70); if (c) st.chowk = c.n; }
     nav.said = new Set();
     routeLayer.clearLayers();
     const ll = r.path.map(i => [G.lat[i], G.lon[i]]);
@@ -814,7 +821,7 @@
       const d = e.at - along, id = e.kind + Math.round(e.at);
       if (d < 0 || nav.said.has(id)) continue;
       const lim = e.kind === 'rep' ? 300 : 150;
-      if (d < lim) { nav.said.add(id); speak(e.kind === 'light' ? t('v_light') : e.kind === 'cam' ? t('v_cam') : e.kind === 'tight' ? t('v_tight', { w: Math.round(e.w) }) : t('v_rep_' + e.t)); break; }
+      if (d < lim) { nav.said.add(id); speak(e.kind === 'light' ? (e.chowk ? t('v_light_at', { c: e.chowk }) : t('v_light')) : e.kind === 'cam' ? t('v_cam') : e.kind === 'tight' ? t('v_tight', { w: Math.round(e.w) }) : t('v_rep_' + e.t)); break; }
     }
     drawNav(along, left);
   }
@@ -850,6 +857,70 @@
     },
     state: () => ({ nav: !!nav, text: $('navText').textContent, dist: $('navDist').textContent, left: $('navLeft').textContent, said: nav ? [...nav.said] : [] })
   };
+
+  /* ---------------- chowks ---------------- */
+  let CH = [], chowkNames = store.get('gr-chowk-names', {});
+  const chKey = c => c.la.toFixed(5) + ',' + c.lo.toFixed(5);
+  async function loadChowks(name) {
+    CH = [];
+    try { CH = (await getJSON(`data/v3/${name}-chowks.json`)).c.map(x => ({ n: x[0], la: x[1], lo: x[2], kind: x[3], v: x[4] })); } catch (e) { }
+    for (const c of CH) { const own = chowkNames[chKey(c)]; if (own) c.n = own; }
+    // chowks are searchable like any place
+    for (const c of CH) if (c.n) { const key = norm(c.n); PL.unshift({ n: c.n, la: c.la, lo: c.lo, ty: 'chowk', st: '', key, tok: key.split(' '), sk: key.split(' ').map(skel) }); }
+  }
+  // nearest named chowk to a point (for voice directions and the route summary)
+  function chowkAt(la, lo, within = 60) {
+    let best = null, bd = within;
+    for (const c of CH) { if (!c.n || Math.abs(c.la - la) > 0.002 || Math.abs(c.lo - lo) > 0.002) continue; const d = Core.hav(la, lo, c.la, c.lo); if (d < bd) { bd = d; best = c; } }
+    return best;
+  }
+  function chowksOnRoute(r) {
+    const out = [];
+    for (let k = 0; k < r.path.length; k++) {
+      const c = chowkAt(G.lat[r.path[k]], G.lon[r.path[k]], 45);
+      if (c && !out.some(x => x === c || x.n === c.n)) out.push(c);
+    }
+    return out;
+  }
+  map.createPane('chowks'); map.getPane('chowks').style.zIndex = 620;
+  const chowkLayer = L.layerGroup().addTo(map);
+  function drawChowks() {
+    chowkLayer.clearLayers();
+    if (!opt.chowks || !CH.length) return;
+    const z = map.getZoom(); if (z < 13) return;
+    const b = map.getBounds().pad(0.1);
+    for (const c of CH) {
+      if (!b.contains([c.la, c.lo])) continue;
+      if (!c.n && z < 15) continue;
+      const big = !!c.n && (z >= 15 || c.v >= 6);
+      const html = c.n ? (big ? `<div class="chowk"><i></i>${esc(c.n.replace(/ (Chowk|चौक|ਚੌਂਕ|ਚੌਕ)$/, ''))}</div>` : `<div class="chowk dot"><i></i></div>`) : `<div class="chowk dot un"><i></i></div>`;
+      const m = L.marker([c.la, c.lo], { icon: L.divIcon({ className: '', html, iconSize: null, iconAnchor: [8, 8] }), pane: 'chowks', keyboard: false }).addTo(chowkLayer);
+      m.on('click', e => { L.DomEvent.stop(e); chowkPopup(c, m); });
+    }
+  }
+  function chowkPopup(c, m) {
+    const div = document.createElement('div'); div.className = 'pop';
+    div.innerHTML = `<b>${esc(c.n || t('unnamed_chowk'))}</b><small>${esc(t(c.kind === 'r' ? 'roundabout' : 'ty_chowk'))}</small>
+      <button data-a="to">${esc(t('route_here'))}</button><button data-a="from">${esc(t('start_here'))}</button><button data-a="name">${esc(t(c.n ? 'rename_chowk' : 'name_chowk'))}</button>`;
+    div.onclick = e => {
+      const a = e.target.dataset.a; if (!a) return;
+      if (a === 'to') { map.closePopup(); setPoint('B', [c.la, c.lo], c.n || t('ty_chowk')); }
+      if (a === 'from') { map.closePopup(); setPoint('A', [c.la, c.lo], c.n || t('ty_chowk')); }
+      if (a === 'name') {
+        div.innerHTML = `<b>${esc(t('name_chowk'))}</b><input maxlength="40" value="${esc(c.n || '')}" placeholder="${esc(t('chowk_name_ph'))}"><button data-a="save">${esc(t('save'))}</button>`;
+        const inp = div.querySelector('input'); inp.focus();
+        div.querySelector('[data-a=save]').onclick = ev => {
+          ev.stopPropagation(); let v = inp.value.trim(); if (!v) return;
+          if (!/(chowk|chauk|चौक|ਚੌਂਕ|ਚੌਕ)$/i.test(v)) v += ' Chowk';
+          c.n = v; chowkNames[chKey(c)] = v; store.set('gr-chowk-names', chowkNames);
+          const key = norm(v); PL.unshift({ n: v, la: c.la, lo: c.lo, ty: 'chowk', st: '', key, tok: key.split(' '), sk: key.split(' ').map(skel) });
+          map.closePopup(); drawChowks(); toast(t('chowk_saved', { n: v }));
+        };
+      }
+    };
+    L.popup({ offset: [0, -4] }).setLatLng([c.la, c.lo]).setContent(div).openOn(map);
+  }
+  map.on('moveend zoomend', drawChowks);
 
   /* ---------------- street width layer ---------------- */
   map.createPane('widths'); map.getPane('widths').style.zIndex = 350; // under routes and markers
@@ -964,7 +1035,7 @@
     $('trWrap').hidden = !motor();
     $('trSel').options[0].textContent = t('auto_tr', { t: t('tr_' + autoTraffic()) }); $('trSel').value = opt.traffic;
     $('citySel').value = opt.city; $('langSel').value = opt.lang; $('themeSel').value = opt.theme;
-    $('widths').checked = opt.widths;
+    $('widths').checked = opt.widths; $('chowksOn').checked = opt.chowks;
     $('voice').checked = opt.voice; $('likely').checked = opt.likely; $('wait').value = opt.wait; $('wv').textContent = opt.wait + ' s';
   }
   $('vehSeg').onclick = e => { const b = e.target.closest('button'); if (!b) return; opt.vehicle = b.dataset.v; saveOpt(); drawOpts(); go(); };
@@ -972,13 +1043,14 @@
   $('citySel').onchange = () => switchCity($('citySel').value);
   $('langSel').onchange = () => { opt.lang = $('langSel').value; saveOpt(); applyLang(); };
   $('themeSel').onchange = () => { opt.theme = $('themeSel').value; saveOpt(); applyTheme(); };
+  $('chowksOn').onchange = () => { opt.chowks = $('chowksOn').checked; saveOpt(); drawChowks(); };
   $('widths').onchange = () => { opt.widths = $('widths').checked; saveOpt(); if (opt.widths && !(G && G.widths)) toast(t('widths_none')); if (opt.widths && map.getZoom() < 15) map.setZoom(15); drawWidths(); };
   $('voice').onchange = () => { opt.voice = $('voice').checked; saveOpt(); if (opt.voice) speak(t('v_test')); };
   $('likely').onchange = () => { opt.likely = $('likely').checked; saveOpt(); if (G) { applySignals(); idle(); go(); } };
   $('wait').oninput = () => { $('wv').textContent = $('wait').value + ' s'; };
   $('wait').onchange = () => { opt.wait = +$('wait').value; saveOpt(); go(); };
   $('edit').onclick = () => { editMode = !editMode; $('edit').classList.toggle('on', editMode); $('edit').textContent = t(editMode ? 'done_fixing' : 'fix_lights'); if (G) drawSignals(); hint(editMode ? t('hint_fix') : ''); if (editMode && isPhone()) $('panel').classList.add('min'); };
-  $('copyfix').onclick = async () => { const s = JSON.stringify({ fixes, reports: localReports.map(({ t: ty, la, lo }) => ({ t: ty, la, lo })) }); try { await navigator.clipboard.writeText(s); toast(t('fixes_copied')); } catch (e) { status(s); } };
+  $('copyfix').onclick = async () => { const s = JSON.stringify({ fixes, reports: localReports.map(({ t: ty, la, lo }) => ({ t: ty, la, lo })), chowks: chowkNames }); try { await navigator.clipboard.writeText(s); toast(t('fixes_copied')); } catch (e) { status(s); } };
   $('swap').onclick = () => { if (!A || !B) return; const a = A, qa = $('qA').value, qb = $('qB').value; setPoint('A', B, qb, true); setPoint('B', a, qa, true); go(); };
   $('clear').onclick = () => { A = B = null; if (mA) map.removeLayer(mA); if (mB) map.removeLayer(mB); mA = mB = null; $('qA').value = $('qB').value = ''; drawQuick(); go(); };
   $('area').onclick = () => { const b = map.getBounds(), s = [b.getSouth(), b.getWest(), b.getNorth(), b.getEast()]; if ((s[2] - s[0]) * (s[3] - s[1]) > 0.04) { toast(t('zoom_in_more')); return; } loadCity(opt.city, s); };

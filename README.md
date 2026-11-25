@@ -16,6 +16,7 @@ A route finder for Jalandhar, Ludhiana, Amritsar and Phagwara. It finds the quic
 - **Car, bike, cycle or walk:** walking and cycling use footpaths, cycle paths and lanes vehicles can't take, and walkers can go both ways on one-way streets.
 - **Voice search** in English, Hindi or Punjabi: tap 🎤 and say "ghar le chalo", "Model Town jana hai", "bus stand se model town" or "nearest petrol pump".
 - **Instant suggestions** from every named place in the city (shops, hospitals, gurdwaras, mandirs, schools, markets, roads, localities), plus nearest-of-type searches like petrol pump, ATM, chemist or hospital. Hindi and Punjabi spellings work too.
+- **Every chowk marked:** major junctions and roundabouts found from the road network and named from OpenStreetMap, Overture and addresses ("Opp. BMC Chowk" → BMC Chowk). Chowks show on the map, appear in search, in the route card ("Via Jyoti Chowk → BMC Chowk") and in voice directions ("At BMC Chowk, turn left"). Tap an unnamed chowk to name it.
 - **Street widths:** estimated for every gali from the gap between buildings (Overture building outlines). Car routes avoid lanes under 3.5 m, go slow through 3.5–5 m lanes, and warn before them. Turn on *Show street widths* to colour the map.
 - **Narrow lanes:** car routes avoid lanes mapped as narrow, and lanes closed to cars.
 

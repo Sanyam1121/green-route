@@ -118,6 +118,12 @@ details[open]{padding-bottom:12px}
 .me{width:26px;height:26px;position:relative}
 .me i{position:absolute;inset:4px;border-radius:50%;background:var(--blue);border:3px solid #fff;box-shadow:0 0 0 6px #3a6fd833}
 .me[style]::before{content:"";position:absolute;left:50%;top:-8px;margin-left:-6px;border:6px solid transparent;border-bottom:10px solid var(--blue);transform:rotate(var(--h));transform-origin:50% 21px}
+.chowk{display:inline-flex;align-items:center;gap:4px;white-space:nowrap;background:#1b1e21;color:#fff;font:700 11px/1 "Hanken Grotesk","Noto Sans Devanagari","Noto Sans Gurmukhi",system-ui,sans-serif;padding:3px 7px 3px 3px;border-radius:999px;box-shadow:0 1px 4px #0006;transform:translate(0,0);cursor:pointer}
+.chowk i{width:9px;height:9px;background:#f2a516;transform:rotate(45deg);border-radius:2px;flex:none;margin-left:2px}
+.chowk.dot{padding:0;width:16px;height:16px;justify-content:center;background:#1b1e21cc}.chowk.dot i{margin:0;width:8px;height:8px}.chowk.dot.un i{background:#c9ced3}
+body.darkmap .chowk{background:#eceeea;color:#1b1e21}
+.hero .via{font-size:13px;font-weight:600;opacity:.95}
+.pop input{font:inherit;font-size:16px;min-height:40px;border:1px solid #ccc;border-radius:8px;padding:0 8px}
 .pop{display:flex;flex-direction:column;gap:4px;min-width:150px;font:14px/1.4 "Hanken Grotesk",system-ui,sans-serif}
 .pop small{color:#666}
 .pop button{min-height:38px;font-size:13px;background:#f4f5f2;color:#1b1e21}
