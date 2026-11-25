@@ -50,7 +50,7 @@ CAT_RULES = [
 
 
 NAME_RULES = [
-    (r"gurdwara|gurudwara|gurduara|\bsahib\b|ਗੁਰਦੁਆਰਾ", "gurdwara"), (r"\bmandir\b|\btemple\b|\bdham\b|\bshivala\b|मंदिर|ਮੰਦਰ", "temple"),
+    (r"gurdwara|gurudwara|gurduara|gurdwaras|ਗੁਰਦੁਆਰਾ|गुरुद्वारा", "gurdwara"), (r"\bmandir\b|\btemple\b|\bdham\b|\bshivala\b|मंदिर|ਮੰਦਰ", "temple"),
     (r"\bmasjid\b|\bmosque\b|\bdargah\b", "mosque"), (r"\bchurch\b", "church"),
     (r"petrol|fuel|filling station|\bcng\b|indian oil|bharat petroleum|hp pump|\biocl\b|\bbpcl\b|\bhpcl\b", "fuel"),
     (r"\batm\b", "atm"), (r"hospital", "hospital"), (r"chemist|medical store|medicos|pharmacy", "pharmacy"),

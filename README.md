@@ -18,6 +18,11 @@ A route finder for Jalandhar, Ludhiana, Amritsar and Phagwara. It finds the quic
 - **Instant suggestions** from every named place in the city (shops, hospitals, gurdwaras, mandirs, schools, markets, roads, localities), plus nearest-of-type searches like petrol pump, ATM, chemist or hospital. Hindi and Punjabi spellings work too.
 - **Narrow lanes:** car routes avoid lanes mapped as narrow, and lanes closed to cars.
 
+## Data sources
+- Roads, signals, footpaths and cameras: © OpenStreetMap contributors (ODbL), updated weekly.
+- Extra places (shops, ATMs, petrol pumps, hospitals, gurdwaras, mandirs, malls…): © Overture Maps Foundation (CDLA-Permissive-2.0), updated monthly.
+- Traffic lights seen in street photos: Mapillary (CC BY-SA), weekly once a `MAPILLARY_TOKEN` repository secret is added.
+
 ## How it works
 - Road, signal and camera data come from OpenStreetMap. A GitHub Action (`.github/workflows/update-data.yml`) downloads it weekly into `data/v2/`. To refresh now: **Actions → Update map data → Run workflow**.
 - OpenStreetMap is missing most signals, so busy main-road junctions count as **likely red lights** (amber dots). Correct them with **Fix red lights**.

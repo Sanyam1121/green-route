@@ -1,6 +1,6 @@
 // Offline support. The app's own files and map data: network first (so updates show at once), cache when offline.
 // Leaflet from unpkg: cache first. Map tiles: cached as you browse.
-const V = 'gr-v10';
+const V = 'gr-v11';
 const SHELL = ['./', 'index.html', 'css/style.css', 'js/i18n.js', 'js/core.js', 'js/app.js', 'manifest.webmanifest', 'icons/icon-192.png', 'icons/icon.svg',
   'https://unpkg.com/leaflet@1.9.4/dist/leaflet.css', 'https://unpkg.com/leaflet@1.9.4/dist/leaflet.js'];
 self.addEventListener('install', e => { e.waitUntil(caches.open(V).then(c => c.addAll(SHELL)).then(() => self.skipWaiting())); });
