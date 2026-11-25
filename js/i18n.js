@@ -25,7 +25,7 @@ var I18N = (function () {
     tap_report_spot: 'Tap the spot on the map',
     loading: 'Loading map…', downloading: 'Downloading roads for this area (can take a minute)…', preparing: 'Getting the road network ready…',
     servers_busy: 'The free map servers are busy. Try again in a minute.',
-    data_from: 'Map data from {d}.', mapped: '{s} confirmed and {l} likely red lights, {c} cameras.',
+    data_from: 'Map data from {d}.', mapped: v => `${v.s} confirmed and ${v.l} likely red lights, ${v.c} camera${v.c === 1 ? '' : 's'}.`,
     hint_start: 'Tap the map to set your start, or search above', hint_start_phone: 'Tap the map where you are starting',
     hint_dest: 'Now tap your destination, or search above', hint_dest_phone: 'Now tap where you are going', hint_fix: 'Tap a dot to remove it, or a junction to add a red light',
     pinned: 'Pinned spot', my_location: 'My location', start_pt: 'Start', dest_pt: 'Destination',
