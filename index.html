@@ -1,0 +1,386 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Green Route – Jalandhar</title>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+<link href="https://fonts.googleapis.com/css2?family=Hanken+Grotesk:wght@400;600;800&display=swap" rel="stylesheet">
+<style>
+/* VOICE: calm, practical driving tool
+   IDEA: a road-sign panel beside the map
+   PICTURE: the live map with three coloured route options
+   COLOUR/TYPE: asphalt ink, signal red/amber/green accents; Hanken Grotesk
+   LAYOUT: panel left, map right; stacked map-over-panel on phones */
+:root{color-scheme:light dark;--bg:light-dark(#f4f5f2,#16181a);--card:light-dark(#fff,#202326);--ink:light-dark(#1b1e21,#eceeea);--mute:light-dark(#5d646b,#9aa1a7);--line:light-dark(#dfe2de,#30353a);--red:#e5383b;--amber:#f2a516;--green:#1f9d55;--blue:#3a6fd8}
+:root[data-theme=light]{color-scheme:light}:root[data-theme=dark]{color-scheme:dark}
+*{box-sizing:border-box;min-width:0}
+html,body{height:100%}
+body{margin:0;background:var(--bg);color:var(--ink);font:15px/1.5 "Hanken Grotesk",system-ui,sans-serif}
+#app{display:grid;grid-template-columns:380px 1fr;height:100vh}
+#panel{overflow-y:auto;padding:20px 18px 28px;border-right:1px solid var(--line);display:flex;flex-direction:column;gap:14px}
+#map{height:100%;width:100%}
+h1{margin:0;font-size:32px;line-height:1.05;font-weight:800;display:flex;align-items:center;gap:10px}
+.lamp{display:inline-flex;flex-direction:column;gap:3px;background:#222;padding:4px;border-radius:7px}
+.lamp i{width:9px;height:9px;border-radius:50%;background:#444}.lamp i:last-child{background:var(--green);box-shadow:0 0 8px var(--green)}
+header p{margin:6px 0 0;color:var(--mute)}
+label{font-size:13px;font-weight:600;color:var(--mute);display:block;margin-bottom:4px}
+.row{display:flex;gap:6px}
+input[type=text]{flex:1;font:inherit;font-size:16px;padding:10px 12px;border:1px solid var(--line);border-radius:10px;background:var(--card);color:var(--ink);min-height:44px}
+input:focus,button:focus-visible{outline:2px solid var(--green);outline-offset:1px}
+button{font:inherit;font-weight:600;min-height:44px;padding:0 14px;border-radius:10px;border:1px solid var(--line);background:var(--card);color:var(--ink);cursor:pointer}
+button:hover{border-color:var(--mute)}
+button.on{background:var(--amber);border-color:var(--amber);color:#1b1e21}
+.dot{width:12px;height:12px;border-radius:50%;display:inline-block;margin-right:6px;vertical-align:-1px}
+#sug{display:flex;flex-direction:column;gap:4px}
+#sug button{text-align:left;font-weight:400;padding:8px 12px;min-height:40px}
+.slider{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:12px}
+.slider .row{justify-content:space-between;align-items:baseline}
+.slider input{width:100%;accent-color:var(--amber)}
+.slider small{color:var(--mute);display:block}
+#cards{display:flex;flex-direction:column;gap:8px}
+.rc{display:grid;grid-template-columns:6px 1fr auto;gap:12px;align-items:center;text-align:left;padding:12px 14px 12px 0;min-height:64px;overflow:hidden}
+.rc .bar{height:100%;align-self:stretch}
+.rc b{display:block;font-size:15px}.rc span{color:var(--mute);font-size:13px}
+.rc .big{text-align:right;font-size:20px;font-weight:800;white-space:nowrap}
+.rc .big small{display:block;font-size:12px;font-weight:600;color:var(--mute)}
+.rc.sel{border-color:var(--ink);border-width:2px}
+.tools{display:flex;flex-wrap:wrap;gap:6px}
+#status{font-size:13px;color:var(--mute);min-height:20px}
+#status.err{color:var(--red)}
+.gm{display:block;text-align:center;padding:12px;border-radius:10px;background:var(--green);color:#fff;font-weight:700;text-decoration:none}
+.note{font-size:13px;color:var(--mute);margin:0}
+.leaflet-container{font:inherit}
+@media(max-width:760px){#app{grid-template-columns:1fr;grid-template-rows:55vh auto;height:auto}#map{grid-row:1;height:55vh}#panel{grid-row:2;border-right:0;overflow:visible}}
+</style>
+</head>
+<body>
+<div id="app">
+<aside id="panel">
+  <header>
+    <h1><span class="lamp"><i></i><i></i><i></i></span>Green Route</h1>
+    <p>The shortest way across the city with the fewest red lights.</p>
+  </header>
+  <div>
+    <label for="qA"><span class="dot" style="background:var(--green)"></span>From</label>
+    <div class="row"><input type="text" id="qA" placeholder="Search a place, or tap the map" autocomplete="off"><button id="locA" title="Use my location" aria-label="Use my location">◎</button></div>
+  </div>
+  <div>
+    <label for="qB"><span class="dot" style="background:var(--red)"></span>To</label>
+    <div class="row"><input type="text" id="qB" placeholder="Search a place, or tap the map" autocomplete="off"><button id="swap" title="Swap" aria-label="Swap start and end">⇅</button></div>
+  </div>
+  <div id="sug"></div>
+  <div class="slider">
+    <div class="row"><label for="pen">How much a signal costs you</label><b id="pv">45 s</b></div>
+    <input type="range" id="pen" min="0" max="180" step="5" value="45">
+    <small>The balanced route takes a detour only if it's quicker than this many seconds per signal skipped.</small>
+  </div>
+  <div id="cards"></div>
+  <a id="gm" class="gm" href="#" target="_blank" rel="noopener" hidden>Navigate this route in Google Maps</a>
+  <div id="status">Loading roads…</div>
+  <div class="tools">
+    <button id="edit">Fix signals</button>
+    <button id="area">Load roads for this view</button>
+    <button id="clear">Clear</button>
+  </div>
+  <p class="note">Road and signal data from OpenStreetMap. Some signals may be missing there. Turn on <b>Fix signals</b> and tap a junction to add or remove one. Your fixes stay saved in this browser. Times are estimates: drive time plus about 35 s average wait at each signal.</p>
+</aside>
+<div id="map"></div>
+</div>
+
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script id="core">
+/* ---------- routing core (no DOM) ---------- */
+var Core = (function(){
+  const SPEED={motorway:60,trunk:45,primary:35,secondary:30,tertiary:25,unclassified:20,residential:15,living_street:8};
+  const spd=h=>(SPEED[(h||'').replace('_link','')]||15)/3.6;
+  const R=6371000,rad=Math.PI/180;
+  function hav(a1,o1,a2,o2){const dA=(a2-a1)*rad,dO=(o2-o1)*rad;const x=Math.sin(dA/2)**2+Math.cos(a1*rad)*Math.cos(a2*rad)*Math.sin(dO/2)**2;return 2*R*Math.asin(Math.sqrt(x));}
+
+  function build(data){
+    const idx=new Map(),lat=[],lon=[],sig=new Set(),ways=[];
+    for(const e of data.elements){
+      if(e.type==='way'){ways.push(e);continue;}
+      if(e.type!=='node')continue;
+      let i=idx.get(e.id);
+      if(i===undefined){i=lat.length;idx.set(e.id,i);lat.push(e.lat);lon.push(e.lon);}
+      const t=e.tags;
+      if(t&&(t.highway==='traffic_signals'||t.crossing==='traffic_signals'))sig.add(i);
+    }
+    const N=lat.length,adj=Array.from({length:N},()=>[]);
+    const par=new Int32Array(N);for(let i=0;i<N;i++)par[i]=i;
+    const find=x=>{while(par[x]!==x){par[x]=par[par[x]];x=par[x];}return x;};
+    for(const w of ways){
+      const t=w.tags||{},h=t.highway,s=spd(h),ow=t.oneway;
+      let dir=0;
+      if(ow==='yes'||ow==='1'||ow==='true'||t.junction==='roundabout'||t.junction==='circular'||h==='motorway')dir=1;
+      if(ow==='-1')dir=-1;
+      if(ow==='no')dir=0;
+      for(let k=0;k+1<w.nodes.length;k++){
+        const a=idx.get(w.nodes[k]),b=idx.get(w.nodes[k+1]);
+        if(a===undefined||b===undefined)continue;
+        const d=hav(lat[a],lon[a],lat[b],lon[b]);
+        if(dir!==-1)adj[a].push(b,d,s);
+        if(dir!==1)adj[b].push(a,d,s);
+        const ra=find(a),rb=find(b);if(ra!==rb)par[ra]=rb;
+      }
+    }
+    const size=new Map();let best=-1,bs=0;
+    for(let i=0;i<N;i++){if(!adj[i].length)continue;const r=find(i);const c=(size.get(r)||0)+1;size.set(r,c);if(c>bs){bs=c;best=r;}}
+    const main=new Uint8Array(N);for(let i=0;i<N;i++)if(adj[i].length&&find(i)===best)main[i]=1;
+    return {lat,lon,adj,osmSig:sig,main,N};
+  }
+
+  function nearest(G,la,lo,onlyMain){
+    let bi=-1,bd=Infinity;const c=Math.cos(la*rad);
+    for(let i=0;i<G.N;i++){
+      if(onlyMain&&!G.main[i])continue;
+      const dy=G.lat[i]-la,dx=(G.lon[i]-lo)*c,d=dy*dy+dx*dx;
+      if(d<bd){bd=d;bi=i;}
+    }
+    return bi<0?null:{i:bi,m:hav(la,lo,G.lat[bi],G.lon[bi])};
+  }
+
+  // Group signal nodes into junction "zones": entering a zone = one signal stop.
+  function zones(G,sigSet){
+    const CELL=0.0006,key=(a,o)=>Math.floor(a/CELL)+':'+Math.floor(o/CELL);
+    const cl=[],grid=new Map(),sigCl=new Map();
+    for(const s of sigSet){
+      const la=G.lat[s],lo=G.lon[s],ca=Math.floor(la/CELL),co=Math.floor(lo/CELL);
+      let found=-1;
+      for(let x=-1;x<=1&&found<0;x++)for(let y=-1;y<=1&&found<0;y++){
+        for(const c of grid.get((ca+x)+':'+(co+y))||[]){if(hav(la,lo,cl[c].lat,cl[c].lon)<50){found=c;break;}}
+      }
+      if(found<0){found=cl.length;cl.push({lat:la,lon:lo,n:1});const k=key(la,lo);(grid.get(k)||grid.set(k,[]).get(k)).push(found);}
+      else{const c=cl[found];c.lat=(c.lat*c.n+la)/(c.n+1);c.lon=(c.lon*c.n+lo)/(c.n+1);c.n++;}
+      sigCl.set(s,found);
+    }
+    const zone=new Int32Array(G.N).fill(-1);
+    if(cl.length){
+      const g2=new Map();cl.forEach((c,i)=>{const k=key(c.lat,c.lon);(g2.get(k)||g2.set(k,[]).get(k)).push(i);});
+      for(let i=0;i<G.N;i++){
+        if(!G.adj[i].length)continue;
+        const la=G.lat[i],lo=G.lon[i],ca=Math.floor(la/CELL),co=Math.floor(lo/CELL);
+        let bd=30,bc=-1;
+        for(let x=-1;x<=1;x++)for(let y=-1;y<=1;y++)for(const c of g2.get((ca+x)+':'+(co+y))||[]){const d=hav(la,lo,cl[c].lat,cl[c].lon);if(d<bd){bd=d;bc=c;}}
+        zone[i]=bc;
+      }
+      for(const [s,c] of sigCl)zone[s]=c;
+    }
+    return {zone,clusters:cl};
+  }
+
+  // mode: 'short' (metres) | 'time' (seconds + P per signal)
+  function route(G,Z,src,dst,mode,P){
+    const N=G.N,dist=new Float64Array(N).fill(Infinity),prev=new Int32Array(N).fill(-1);
+    const hn=[],hk=[];
+    const push=(n,k)=>{let i=hn.length;hn.push(n);hk.push(k);while(i>0){const p=(i-1)>>1;if(hk[p]<=k)break;hn[i]=hn[p];hk[i]=hk[p];i=p;}hn[i]=n;hk[i]=k;};
+    const pop=()=>{const n=hn[0],ln=hn.pop(),lk=hk.pop();if(hn.length){let i=0;const L=hn.length;while(true){let c=2*i+1;if(c>=L)break;if(c+1<L&&hk[c+1]<hk[c])c++;if(hk[c]>=lk)break;hn[i]=hn[c];hk[i]=hk[c];i=c;}hn[i]=ln;hk[i]=lk;}return n;};
+    const zone=Z.zone;
+    dist[src]=0;push(src,0);
+    while(hn.length){
+      const d0=hk[0],u=pop();
+      if(d0>dist[u])continue;
+      if(u===dst)break;
+      const a=G.adj[u],zu=zone[u];
+      for(let k=0;k<a.length;k+=3){
+        const v=a[k],len=a[k+1];
+        let c=mode==='short'?len:len/a[k+2];
+        const zv=zone[v];
+        if(zv>=0&&zv!==zu)c+=mode==='short'?1:P;
+        const nd=d0+c;
+        if(nd<dist[v]){dist[v]=nd;prev[v]=u;push(v,nd);}
+      }
+    }
+    if(dist[dst]===Infinity)return null;
+    const path=[];for(let x=dst;x!==-1;x=prev[x])path.push(x);path.reverse();
+    let len=0,time=0;const hit=[];
+    for(let k=0;k+1<path.length;k++){
+      const u=path[k],v=path[k+1],a=G.adj[u];
+      for(let j=0;j<a.length;j+=3)if(a[j]===v){len+=a[j+1];time+=a[j+1]/a[j+2];break;}
+      if(zone[v]>=0&&zone[v]!==zone[u])hit.push(zone[v]);
+    }
+    return {path,len,time,signals:hit};
+  }
+  return {build,nearest,zones,route,hav};
+})();
+if(typeof module!=='undefined')module.exports=Core;
+</script>
+
+<script>
+{
+const $=id=>document.getElementById(id);
+const DEF=[31.27,75.52,31.38,75.65]; // Jalandhar s,w,n,e
+const WAIT=35;
+const MODES=[
+  {id:'short',name:'Shortest',desc:'Least distance',color:'#3a6fd8'},
+  {id:'bal',name:'Balanced',desc:'Skips signals when it pays',color:'#f2a516'},
+  {id:'few',name:'Fewest signals',desc:'Avoids red lights hardest',color:'#1f9d55'}
+];
+let G=null,Z=null,sigSet=null,A=null,B=null,results=[],sel='bal',editMode=false,bbox=DEF;
+let fixes={add:[],del:[]},dataNote='';
+function fromCompact(c){const els=[],N=c.n.length/2;for(let i=0;i<N;i++)els.push({type:'node',id:i,lat:c.n[2*i]/1e6,lon:c.n[2*i+1]/1e6});for(const s of c.s)els.push({type:'node',id:s,lat:c.n[2*s]/1e6,lon:c.n[2*s+1]/1e6,tags:{highway:'traffic_signals'}});for(const w of c.w)els.push({type:'way',nodes:w.slice(2),tags:{highway:c.hw[w[0]]||'residential',oneway:w[1]===1?'yes':w[1]===-1?'-1':'no'}});return els;}
+try{fixes=JSON.parse(localStorage.getItem('gr-fixes'))||fixes;}catch(e){}
+
+const map=L.map('map',{preferCanvas:true,zoomControl:true}).fitBounds([[DEF[0],DEF[1]],[DEF[2],DEF[3]]]);
+L.tileLayer('https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png',{maxZoom:19,subdomains:'abcd',attribution:'&copy; OpenStreetMap contributors &copy; CARTO'}).addTo(map);
+const sigLayer=L.layerGroup().addTo(map),routeLayer=L.layerGroup().addTo(map);
+const pin=c=>L.divIcon({className:'',html:`<div style="width:22px;height:22px;border-radius:50%;background:${c};border:3px solid #fff;box-shadow:0 1px 4px #0006"></div>`,iconSize:[22,22],iconAnchor:[11,11]});
+let mA=null,mB=null;
+
+const status=(t,err)=>{$('status').textContent=t;$('status').className=err?'err':'';};
+
+/* ---------- data loading with cache ---------- */
+const idb=()=>new Promise((res,rej)=>{try{const r=indexedDB.open('greenroute',1);r.onupgradeneeded=()=>r.result.createObjectStore('osm');r.onsuccess=()=>res(r.result);r.onerror=()=>rej(r.error);}catch(e){rej(e);}});
+async function cacheGet(k){try{const db=await idb();return await new Promise(r=>{const q=db.transaction('osm').objectStore('osm').get(k);q.onsuccess=()=>r(q.result);q.onerror=()=>r(null);});}catch(e){return null;}}
+async function cachePut(k,v){try{const db=await idb();db.transaction('osm','readwrite').objectStore('osm').put(v,k);}catch(e){}}
+
+async function loadArea(b){
+  const bb=b.map(x=>x.toFixed(4)).join(',');
+  const key='v1:'+bb;
+  status('Loading roads and signals…');
+  let data=null;
+  if(b===DEF){
+    try{
+      status('Loading Jalandhar map data…');
+      const r=await fetch('data/jalandhar.json',{cache:'no-cache'});
+      if(r.ok){const c=await r.json();data={elements:fromCompact(c)};dataNote=' Map data updated '+new Date(c.updated).toLocaleDateString('en-IN')+'.';}
+    }catch(e){console.warn('saved data',e);}
+  }
+  if(!data){const c=await cacheGet(key);if(c&&Date.now()-c.t<7*864e5)data=c.d;}
+  if(!data){
+    const q=`[out:json][timeout:120];way["highway"~"^(motorway|trunk|primary|secondary|tertiary|unclassified|residential|living_street|motorway_link|trunk_link|primary_link|secondary_link|tertiary_link)$"]["access"!~"^(private|no)$"]["area"!="yes"](${bb})->.r;.r out body qt;node(w.r);out skel qt;(node["highway"="traffic_signals"](${bb});node["crossing"="traffic_signals"](${bb}););out body qt;`;
+    const eps=['https://maps.mail.ru/osm/tools/overpass/api/interpreter','https://overpass.private.coffee/api/interpreter','https://overpass.kumi.systems/api/interpreter','https://overpass-api.de/api/interpreter'];
+    for(let round=0;round<2&&!data;round++)for(const ep of eps){
+      try{
+        status('Downloading road map from OpenStreetMap (can take up to a minute)…');
+        const ctl=new AbortController(),tm=setTimeout(()=>ctl.abort(),90000);
+        const r=await fetch(ep,{method:'POST',body:'data='+encodeURIComponent(q),headers:{'Content-Type':'application/x-www-form-urlencoded'},signal:ctl.signal});
+        clearTimeout(tm);
+        if(!r.ok)throw new Error(r.status);
+        data=await r.json();dataNote='';break;
+      }catch(e){console.warn('overpass',ep,e);}
+    }
+    if(!data){status('The free map-data servers are busy right now. Wait a minute and press "Load roads for this view" again.',true);return;}
+    cachePut(key,{t:Date.now(),d:data});
+  }
+  status('Building road network…');
+  await new Promise(r=>setTimeout(r,20));
+  G=Core.build(data);bbox=b;
+  applySignals();
+  status(`Ready: ${G.N.toLocaleString()} road points, ${Z.clusters.length} signal junctions mapped.${dataNote} Tap the map to set start and end.`);
+  if(A&&B)go();
+}
+
+function applySignals(){
+  sigSet=new Set(G.osmSig);
+  for(const [la,lo] of fixes.del){const n=Core.nearest(G,la,lo,false);if(n&&n.m<20)for(const s of [...sigSet])if(Core.hav(G.lat[s],G.lon[s],la,lo)<40)sigSet.delete(s);}
+  for(const [la,lo] of fixes.add){const n=Core.nearest(G,la,lo,true);if(n&&n.m<40)sigSet.add(n.i);}
+  Z=Core.zones(G,sigSet);
+  drawSignals();
+}
+function drawSignals(){
+  sigLayer.clearLayers();
+  for(const c of Z.clusters)L.circleMarker([c.lat,c.lon],{radius:editMode?7:4,color:'#fff',weight:1.5,fillColor:'#e5383b',fillOpacity:1}).addTo(sigLayer);
+}
+
+/* ---------- routing ---------- */
+function setPoint(which,ll,label){
+  if(which==='A'){A=ll;if(mA)mA.setLatLng(ll);else{mA=L.marker(ll,{icon:pin('#1f9d55'),draggable:true}).addTo(map);mA.on('dragend',()=>{A=mA.getLatLng();$('qA').value='Pinned point';go();});}$('qA').value=label||'Pinned point';}
+  else{B=ll;if(mB)mB.setLatLng(ll);else{mB=L.marker(ll,{icon:pin('#e5383b'),draggable:true}).addTo(map);mB.on('dragend',()=>{B=mB.getLatLng();$('qB').value='Pinned point';go();});}$('qB').value=label||'Pinned point';}
+  go();
+}
+
+function go(){
+  routeLayer.clearLayers();$('cards').innerHTML='';$('gm').hidden=true;results=[];
+  if(!G||!A||!B)return;
+  const s=Core.nearest(G,A.lat,A.lng,true),d=Core.nearest(G,B.lat,B.lng,true);
+  if(!s||!d||s.m>800||d.m>800){status('A point is outside the loaded area. Pan there and press "Load roads for this view".',true);return;}
+  if(s.i===d.i){status('Start and end are the same spot.',true);return;}
+  const P=+$('pen').value;
+  const runs={short:Core.route(G,Z,s.i,d.i,'short',0),bal:Core.route(G,Z,s.i,d.i,'time',P),few:Core.route(G,Z,s.i,d.i,'time',900)};
+  if(!runs.short){status('No drivable route found between these points (one-way streets may block it).',true);return;}
+  results=MODES.map(m=>({...m,r:runs[m.id]}));
+  status('Tap a route to select it. Drag the pins to adjust.');
+  const bnd=L.latLngBounds(results.flatMap(x=>[x.r.path[0],x.r.path[x.r.path.length-1]]).map(i=>[G.lat[i],G.lon[i]]));
+  if(!map.getBounds().contains(bnd))map.fitBounds(bnd.pad(0.3));
+  render();
+}
+
+function fmt(r){const km=(r.len/1000).toFixed(r.len<10000?1:0),min=Math.round((r.time+r.signals.length*WAIT)/60);return {km,min};}
+
+function render(){
+  routeLayer.clearLayers();
+  const ordered=[...results].sort((a,b)=>(a.id===sel)-(b.id===sel));
+  for(const x of ordered){
+    const ll=x.r.path.map(i=>[G.lat[i],G.lon[i]]),on=x.id===sel;
+    L.polyline(ll,{color:'#fff',weight:on?10:6,opacity:on?0.9:0.6}).addTo(routeLayer);
+    L.polyline(ll,{color:x.color,weight:on?6:3.5,opacity:on?1:0.55}).on('click',()=>{sel=x.id;render();}).addTo(routeLayer);
+  }
+  const cur=results.find(x=>x.id===sel);
+  for(const z of new Set(cur.r.signals)){const c=Z.clusters[z];L.circleMarker([c.lat,c.lon],{radius:8,color:'#fff',weight:2,fillColor:'#e5383b',fillOpacity:1}).bindTooltip('Signal on this route').addTo(routeLayer);}
+  const seen=new Map();
+  $('cards').innerHTML=results.map(x=>{
+    const f=fmt(x.r),sig=x.r.signals.length,sk=x.r.path.join(',');
+    const same=seen.get(sk);if(!same)seen.set(sk,x.name);
+    return `<button class="rc${x.id===sel?' sel':''}" data-id="${x.id}"><i class="bar" style="background:${x.color}"></i><div><b>${x.name}</b><span>${same?'Same as '+same:x.desc} · ${f.km} km</span></div><div class="big">${sig} <small>signal${sig===1?'':'s'} · ~${f.min} min</small></div></button>`;
+  }).join('');
+  for(const b of document.querySelectorAll('.rc'))b.onclick=()=>{sel=b.dataset.id;render();};
+  // Google Maps hand-off with waypoints along the chosen path
+  const p=cur.r.path,n=Math.min(8,Math.max(0,Math.floor(cur.r.len/700)));
+  const wp=[];for(let k=1;k<=n;k++){const i=p[Math.floor(k*(p.length-1)/(n+1))];wp.push(G.lat[i].toFixed(5)+','+G.lon[i].toFixed(5));}
+  const o=A.lat.toFixed(5)+','+A.lng.toFixed(5),dd=B.lat.toFixed(5)+','+B.lng.toFixed(5);
+  $('gm').href=`https://www.google.com/maps/dir/?api=1&origin=${o}&destination=${dd}${wp.length?'&waypoints='+encodeURIComponent(wp.join('|')):''}&travelmode=driving`;
+  $('gm').hidden=false;
+}
+
+/* ---------- interactions ---------- */
+map.on('click',e=>{
+  if(editMode){toggleSignal(e.latlng);return;}
+  if(!A)setPoint('A',e.latlng);else if(!B)setPoint('B',e.latlng);else setPoint('B',e.latlng);
+});
+function toggleSignal(ll){
+  if(!G)return;
+  const near=Z.clusters.findIndex(c=>Core.hav(c.lat,c.lon,ll.lat,ll.lng)<35);
+  const key=[+ll.lat.toFixed(6),+ll.lng.toFixed(6)];
+  if(near>=0){
+    const c=Z.clusters[near];
+    fixes.add=fixes.add.filter(([a,o])=>Core.hav(a,o,c.lat,c.lon)>=40);
+    fixes.del.push([+c.lat.toFixed(6),+c.lon.toFixed(6)]);
+  }else{
+    const n=Core.nearest(G,ll.lat,ll.lng,true);
+    if(!n||n.m>40){status('Tap closer to a road junction to add a signal.',true);return;}
+    fixes.del=fixes.del.filter(([a,o])=>Core.hav(a,o,G.lat[n.i],G.lon[n.i])>=40);
+    fixes.add.push([+G.lat[n.i].toFixed(6),+G.lon[n.i].toFixed(6)]);
+  }
+  try{localStorage.setItem('gr-fixes',JSON.stringify(fixes));}catch(e){}
+  applySignals();go();
+  status(near>=0?'Signal removed.':'Signal added.');
+}
+$('edit').onclick=()=>{editMode=!editMode;$('edit').classList.toggle('on',editMode);$('edit').textContent=editMode?'Done fixing':'Fix signals';if(G)drawSignals();status(editMode?'Tap a red dot to remove it, or tap a junction to add a signal.':'Signal editing off.');};
+$('pen').oninput=()=>{$('pv').textContent=$('pen').value+' s';};
+$('pen').onchange=go;
+$('swap').onclick=()=>{if(!A||!B)return;const a=A,qa=$('qA').value;A=B;B=a;mA.setLatLng(A);mB.setLatLng(B);$('qA').value=$('qB').value;$('qB').value=qa;go();};
+$('clear').onclick=()=>{A=B=null;if(mA)map.removeLayer(mA);if(mB)map.removeLayer(mB);mA=mB=null;$('qA').value=$('qB').value='';go();status('Cleared. Tap the map to set a start.');};
+$('area').onclick=()=>{const b=map.getBounds();const s=[b.getSouth(),b.getWest(),b.getNorth(),b.getEast()];if((s[2]-s[0])*(s[3]-s[1])>0.04){status('That view is too big. Zoom in to roughly one city first.',true);return;}loadArea(s);};
+$('locA').onclick=()=>{if(!navigator.geolocation){status('Location not available here.',true);return;}status('Finding you…');navigator.geolocation.getCurrentPosition(p=>{const ll=L.latLng(p.coords.latitude,p.coords.longitude);setPoint('A',ll,'My location');map.panTo(ll);},()=>status('Could not get your location. Tap the map instead.',true),{enableHighAccuracy:true,timeout:10000});};
+
+async function search(which){
+  const q=$(which==='A'?'qA':'qB').value.trim();if(!q)return;
+  status('Searching…');
+  try{
+    const u=`https://nominatim.openstreetmap.org/search?format=json&limit=5&countrycodes=in&viewbox=${bbox[1]},${bbox[2]},${bbox[3]},${bbox[0]}&q=${encodeURIComponent(q)}`;
+    const r=await (await fetch(u,{headers:{'Accept-Language':'en'}})).json();
+    if(!r.length){status('No place found. Try another name or tap the map.',true);$('sug').innerHTML='';return;}
+    $('sug').innerHTML=r.map((p,i)=>{const t=document.createElement('span');t.textContent=p.display_name;return `<button data-i="${i}">${t.innerHTML}</button>`;}).join('');
+    for(const b of $('sug').children)b.onclick=()=>{const p=r[+b.dataset.i];const ll=L.latLng(+p.lat,+p.lon);setPoint(which,ll,p.display_name.split(',').slice(0,2).join(','));$('sug').innerHTML='';map.panTo(ll);};
+    status('Pick a result.');
+  }catch(e){status('Search failed. Tap the map instead.',true);}
+}
+for(const w of ['A','B'])$('q'+w).addEventListener('keydown',e=>{if(e.key==='Enter'){e.preventDefault();search(w);}});
+
+loadArea(DEF);
+}
+</script>
+</body>
+</html>
