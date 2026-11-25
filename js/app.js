@@ -57,7 +57,7 @@
   let G = null, Z = null, A = null, B = null, results = {}, sel = 'best', editMode = false, dataNote = '';
   let fixes = store.get('gr-fixes', { add: [], del: [] }), shared = { add: [], del: [] };
   let reports = [], localReports = store.get('gr-local-reports', []), cleared = new Set();
-  let pen = { car: null, bike: null }, block = null, reportPick = null, liveArea = null;
+  let photoSignals = [], pen = { car: null, bike: null }, block = null, reportPick = null, liveArea = null;
 
   /* ---------------- map ---------------- */
   const map = L.map('map', { preferCanvas: true, zoomControl: !('ontouchstart' in window) }).setView(CITIES[opt.city].center, 13);
@@ -101,6 +101,8 @@
       cachePut(key, { t: Date.now(), d: c });
     }
     try { const j = await getJSON('data/signals-extra.json'); shared = { add: j.add || [], del: j.del || [] }; } catch (e) { }
+    photoSignals = [];
+    if (!area) try { photoSignals = (await getJSON(`data/v3/${name}-signals.json`)).s || []; } catch (e) { }
     status(t('preparing')); await new Promise(r => setTimeout(r, 20));
     if (!area) await loadPlaces(name);
     const g = Core.build(c); Z = null; G = g; liveArea = area || null;
@@ -114,6 +116,8 @@
     for (const s of G.osmSig) kinds.set(s, 'sure');
     if (opt.likely) for (const s of G.likely) if (!kinds.has(s)) kinds.set(s, 'likely');
     const rl = [...reports, ...localReports].filter(r => r.t === 'redlight').map(r => [r.la, r.lo]);
+    // traffic lights detected in Mapillary street photos count as confirmed
+    for (const [la, lo] of photoSignals) { const n = Core.nearest(G, la, lo, true); if (n && n.m < 30) kinds.set(n.i, 'sure'); }
     const allDel = [...shared.del, ...fixes.del], allAdd = [...shared.add, ...fixes.add, ...rl];
     for (const [la, lo] of allDel) for (const s of [...kinds.keys()]) if (Core.hav(G.lat[s], G.lon[s], la, lo) < 45) kinds.delete(s);
     for (const [la, lo] of allAdd) { const n = Core.nearest(G, la, lo, true); if (n && n.m < 40) kinds.set(n.i, 'sure'); }
