@@ -41,7 +41,8 @@ var Core = (function () {
   // Build the road graph from a compact (v1, v2 or v3) data object.
   // adj[u] = [to, metres, info, ...]  where info = class(0-15) | narrow 16 | noCars 32 | againstOneway 64
   //                                             | noMotor 128 | noBicycle 256 | noFoot 512
-  function build(c) {
+  // widths: optional array (one per way, decimetres, 0 = unknown) from data/v3/<city>-widths.json
+  function build(c, widths) {
     const N = c.n.length / 2, lat = new Float64Array(N), lon = new Float64Array(N);
     for (let i = 0; i < N; i++) { lat[i] = c.n[2 * i] / 1e6; lon[i] = c.n[2 * i + 1] / 1e6; }
     const adj = Array.from({ length: N }, () => []), nb = new Array(N);
@@ -49,10 +50,12 @@ var Core = (function () {
     const find = x => { while (par[x] !== x) { par[x] = par[par[x]]; x = par[x]; } return x; };
     const link = (a, b, r) => { const m = nb[a] || (nb[a] = new Map()); if ((m.get(b) ?? -1) < r) m.set(b, r); };
     const vx = c.v >= 2;
-    for (const w of c.w) {
+    for (let wi = 0; wi < c.w.length; wi++) {
+      const w = c.w[wi];
       const h = c.hw[w[0]] || 'residential', f = w[1];
+      const wcode = widths && widths[wi] ? Math.min(63, Math.max(1, Math.round(widths[wi] / 5))) : 0; // 0.5 m units
       const dir = vx ? (f & 3) - 1 : f;
-      const info = clsOf(h) | (vx && (f & 4) ? 16 : 0) | (vx && (f & 8) ? 32 : 0) | (vx && (f & 16) ? 128 : 0) | (vx && (f & 32) ? 256 : 0) | (vx && (f & 64) ? 512 : 0);
+      const info = clsOf(h) | (vx && (f & 4) ? 16 : 0) | (vx && (f & 8) ? 32 : 0) | (vx && (f & 16) ? 128 : 0) | (vx && (f & 32) ? 256 : 0) | (vx && (f & 64) ? 512 : 0) | (wcode << 10);
       const rk = RANK[h] || 0;
       for (let k = 2; k + 1 < w.length; k++) {
         const a = w[k], b = w[k + 1];
@@ -81,13 +84,13 @@ var Core = (function () {
     const size = new Map(); let best = -1, bs = 0;
     for (let i = 0; i < N; i++) { if (!adj[i].length) continue; const r = find(i); const k = (size.get(r) || 0) + 1; size.set(r, k); if (k > bs) { bs = k; best = r; } }
     const main = new Uint8Array(N); for (let i = 0; i < N; i++) if (adj[i].length && find(i) === best) main[i] = 1;
-    return { lat, lon, adj, deg, osmSig: c.s || [], cams: c.cam || [], likely, main, N };
+    return { lat, lon, adj, deg, osmSig: c.s || [], cams: c.cam || [], likely, main, N, ways: c.w, hw: c.hw, widths: widths || null };
   }
 
   // Which nodes a traveller can start from / end at (has at least one usable edge).
   function usable(G, o) {
     G._mask = G._mask || {};
-    const key = o.who + ':' + o.realSp.map(x => x > 0 ? 1 : 0).join('');
+    const key = o.who + ':' + (o.narrowBlock ? 1 : 0) + ':' + o.realSp.map(x => x > 0 ? 1 : 0).join('');
     if (G._mask[key]) return G._mask[key];
     const m = new Uint8Array(G.N);
     for (let i = 0; i < G.N; i++) { if (!G.main[i]) continue; const a = G.adj[i]; for (let k = 0; k < a.length; k += 3) if (allowed(a[k + 2], o)) { m[i] = 1; break; } }
@@ -97,7 +100,7 @@ var Core = (function () {
     if (!o.realSp[info & 15]) return false;
     const who = o.who || 'car';
     if ((info & 64) && who !== 'walk') return false;
-    if (who === 'car') return !(info & 160);
+    if (who === 'car') { if (info & 160) return false; const wc = (info >> 10) & 63; return !(o.narrowBlock && wc && wc < 7); } // under 3.5 m: no cars
     if (who === 'bike') return !(info & 128);
     if (who === 'cycle') return !(info & 256);
     return !(info & 512);
@@ -179,6 +182,7 @@ var Core = (function () {
         if (!rs[info & 15] || !allowed(info, o)) continue;
         let c = short ? len : len / cs[info & 15];
         if (car && (info & 16)) c *= nf;
+        if (car) { const wc = (info >> 10) & 63; if (wc && wc < 10) c *= 1.5; } // 3.5–5 m: slow, one car at a time
         const zv = zone[v];
         if (zv >= 0 && zv !== zu) c += short ? 1 : P;
         if (pen && pen[v]) c += short ? pen[v] / 10 : pen[v];
@@ -193,7 +197,7 @@ var Core = (function () {
 
   // Distance, time, small-street and narrow-lane metres, red-light zones and cumulative distance along a path.
   function measure(G, Z, path, realSp, o) {
-    let len = 0, time = 0, small = 0, narrow = 0, r_paths = 0; const hit = [], hitAt = [], cum = new Float64Array(path.length), info = new Int32Array(path.length);
+    let len = 0, time = 0, small = 0, narrow = 0, r_paths = 0, tight = 0, minW = Infinity, prevTight = false; const tightAt = []; const hit = [], hitAt = [], cum = new Float64Array(path.length), info = new Int32Array(path.length);
     for (let k = 0; k + 1 < path.length; k++) {
       const u = path[k], v = path[k + 1], a = G.adj[u];
       for (let j = 0; j < a.length; j += 3) if (a[j] === v && (!o || allowed(a[j + 2], o))) {
@@ -201,6 +205,9 @@ var Core = (function () {
         len += a[j + 1]; time += a[j + 1] / realSp[f & 15];
         if ((f & 15) >= 5) small += a[j + 1];
         if ((f & 15) >= 10) r_paths += a[j + 1];
+        const wc = (f >> 10) & 63, isTight = wc > 0 && wc < 10;
+        if (isTight) { tight += a[j + 1]; minW = Math.min(minW, wc / 2); if (!prevTight) tightAt.push([k, wc / 2]); }
+        prevTight = isTight;
         if (f & 16) narrow += a[j + 1];
         break;
       }
@@ -208,7 +215,7 @@ var Core = (function () {
       const zv = Z.zone[v];
       if (zv >= 0 && zv !== Z.zone[u] && k + 1 < path.length - 1) { hit.push(zv); hitAt.push(k + 1); }
     }
-    return { path, len, time, small, narrow, paths: r_paths, signals: hit, signalAt: hitAt, cum, info };
+    return { path, len, time, small, narrow, paths: r_paths, tight, minW: isFinite(minW) ? minW : 0, tightAt, signals: hit, signalAt: hitAt, cum, info };
   }
 
   // Turn-by-turn steps from a measured route.

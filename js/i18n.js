@@ -1,6 +1,10 @@
 /* Green Route translations: English, Hindi, Punjabi. Values are strings with {vars} or functions of vars. */
 var I18N = (function () {
   const en = {
+    widths_lbl: 'Show street widths', widths_sub: 'Estimated from the gap between buildings. Red: under 3.5 m (bike or walk only) · Orange: 3.5–5 m, one car at a time · Green: wider. Car routes avoid red lanes.',
+    tight_warn: 'Has {k} km of tight lanes (narrowest about {w} m). One car at a time.', v_tight: 'Narrow lane ahead, about {w} metres wide. Go slow.',
+    only_narrow: 'The only way in for a car is through a very narrow lane. Check before driving in.', width_tip: 'About {w} m wide (estimate)',
+    zoom_for_widths: 'Zoom in to see street widths', widths_none: 'Street widths are not ready for this city yet.',
     cycle: '🚲 Cycle', walk: '🚶 Walk', pct_lanes: '{n}% through lanes and paths',
     nearest: 'Nearest', none_nearby: 'None of these mapped nearby yet',
     listening: 'Listening… speak now', voice_examples: 'Try: “Model Town jana hai”, “ghar le chalo”, “nearest petrol pump”',
@@ -79,6 +83,10 @@ var I18N = (function () {
   };
 
   const hi = {
+    widths_lbl: 'गली की चौड़ाई दिखाएँ', widths_sub: 'इमारतों के बीच की दूरी से अनुमान। लाल: 3.5 मी से कम (सिर्फ़ बाइक या पैदल) · नारंगी: 3.5–5 मी, एक समय में एक कार · हरा: चौड़ी। कार के रास्ते लाल गलियों से बचते हैं।',
+    tight_warn: 'इसमें {k} किमी तंग गलियाँ हैं (सबसे तंग लगभग {w} मी)। एक समय में एक कार।', v_tight: 'आगे तंग गली है, लगभग {w} मीटर चौड़ी। धीरे चलें।',
+    only_narrow: 'कार के लिए अंदर जाने का रास्ता बहुत तंग गली से ही है। जाने से पहले देख लें।', width_tip: 'लगभग {w} मी चौड़ी (अनुमान)',
+    zoom_for_widths: 'गली की चौड़ाई देखने के लिए ज़ूम करें', widths_none: 'इस शहर की गली चौड़ाई अभी तैयार नहीं है।',
     cycle: '🚲 साइकिल', walk: '🚶 पैदल', pct_lanes: '{n}% गलियों और रास्तों से',
     nearest: 'सबसे पास', none_nearby: 'पास में ऐसी कोई जगह मैप में नहीं है',
     listening: 'सुन रहे हैं… अब बोलें', voice_examples: 'जैसे: “मॉडल टाउन जाना है”, “घर ले चलो”, “पास का पेट्रोल पंप”',
@@ -157,6 +165,10 @@ var I18N = (function () {
   };
 
   const pa = {
+    widths_lbl: 'ਗਲੀ ਦੀ ਚੌੜਾਈ ਵਿਖਾਓ', widths_sub: 'ਇਮਾਰਤਾਂ ਵਿਚਕਾਰ ਦੀ ਦੂਰੀ ਤੋਂ ਅੰਦਾਜ਼ਾ। ਲਾਲ: 3.5 ਮੀ ਤੋਂ ਘੱਟ (ਸਿਰਫ਼ ਬਾਈਕ ਜਾਂ ਪੈਦਲ) · ਸੰਤਰੀ: 3.5–5 ਮੀ, ਇੱਕ ਸਮੇਂ ਇੱਕ ਕਾਰ · ਹਰਾ: ਚੌੜੀ। ਕਾਰ ਦੇ ਰਸਤੇ ਲਾਲ ਗਲੀਆਂ ਤੋਂ ਬਚਦੇ ਹਨ।',
+    tight_warn: 'ਇਸ ਵਿੱਚ {k} ਕਿਮੀ ਭੀੜੀਆਂ ਗਲੀਆਂ ਹਨ (ਸਭ ਤੋਂ ਭੀੜੀ ਲਗਭਗ {w} ਮੀ)। ਇੱਕ ਸਮੇਂ ਇੱਕ ਕਾਰ।', v_tight: 'ਅੱਗੇ ਭੀੜੀ ਗਲੀ ਹੈ, ਲਗਭਗ {w} ਮੀਟਰ ਚੌੜੀ। ਹੌਲੀ ਚੱਲੋ।',
+    only_narrow: 'ਕਾਰ ਲਈ ਅੰਦਰ ਜਾਣ ਦਾ ਰਸਤਾ ਬਹੁਤ ਭੀੜੀ ਗਲੀ ਰਾਹੀਂ ਹੀ ਹੈ। ਜਾਣ ਤੋਂ ਪਹਿਲਾਂ ਵੇਖ ਲਓ।', width_tip: 'ਲਗਭਗ {w} ਮੀ ਚੌੜੀ (ਅੰਦਾਜ਼ਾ)',
+    zoom_for_widths: 'ਗਲੀ ਦੀ ਚੌੜਾਈ ਵੇਖਣ ਲਈ ਜ਼ੂਮ ਕਰੋ', widths_none: 'ਇਸ ਸ਼ਹਿਰ ਦੀ ਗਲੀ ਚੌੜਾਈ ਅਜੇ ਤਿਆਰ ਨਹੀਂ।',
     cycle: '🚲 ਸਾਈਕਲ', walk: '🚶 ਪੈਦਲ', pct_lanes: '{n}% ਗਲੀਆਂ ਅਤੇ ਰਸਤਿਆਂ ਰਾਹੀਂ',
     nearest: 'ਸਭ ਤੋਂ ਨੇੜੇ', none_nearby: 'ਨੇੜੇ ਅਜਿਹੀ ਕੋਈ ਥਾਂ ਨਕਸ਼ੇ ਵਿੱਚ ਨਹੀਂ',
     listening: 'ਸੁਣ ਰਹੇ ਹਾਂ… ਹੁਣ ਬੋਲੋ', voice_examples: 'ਜਿਵੇਂ: “ਮਾਡਲ ਟਾਊਨ ਜਾਣਾ ਹੈ”, “ਘਰ ਲੈ ਚੱਲੋ”, “ਨੇੜੇ ਦਾ ਪੈਟਰੋਲ ਪੰਪ”',

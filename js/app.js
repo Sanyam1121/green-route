@@ -20,7 +20,7 @@
     amritsar: { bbox: [31.59, 74.81, 31.68, 74.93], center: [31.634, 74.873] },
     phagwara: { bbox: [31.20, 75.74, 31.25, 75.80], center: [31.224, 75.770] },
   };
-  const opt = Object.assign({ vehicle: 'car', traffic: 'auto', lang: 'en', theme: 'auto', voice: true, likely: true, wait: 45, city: 'jalandhar' }, store.get('gr-opt', {}));
+  const opt = Object.assign({ vehicle: 'car', traffic: 'auto', lang: 'en', theme: 'auto', voice: true, likely: true, wait: 45, city: 'jalandhar', widths: false }, store.get('gr-opt', {}));
   if (!CITIES[opt.city]) opt.city = 'jalandhar';
   const saveOpt = () => store.set('gr-opt', opt);
 
@@ -57,7 +57,7 @@
   let G = null, Z = null, A = null, B = null, results = {}, sel = 'best', editMode = false, dataNote = '';
   let fixes = store.get('gr-fixes', { add: [], del: [] }), shared = { add: [], del: [] };
   let reports = [], localReports = store.get('gr-local-reports', []), cleared = new Set();
-  let photoSignals = [], pen = { car: null, bike: null }, block = null, reportPick = null, liveArea = null;
+  let relaxNarrow = false, photoSignals = [], pen = { car: null, bike: null }, block = null, reportPick = null, liveArea = null;
 
   /* ---------------- map ---------------- */
   const map = L.map('map', { preferCanvas: true, zoomControl: !('ontouchstart' in window) }).setView(CITIES[opt.city].center, 13);
@@ -105,8 +105,10 @@
     if (!area) try { photoSignals = (await getJSON(`data/v3/${name}-signals.json`)).s || []; } catch (e) { }
     status(t('preparing')); await new Promise(r => setTimeout(r, 20));
     if (!area) await loadPlaces(name);
-    const g = Core.build(c); Z = null; G = g; liveArea = area || null;
-    applySignals(); drawCams(); loadReports();
+    let widths = null;
+    if (!area) try { const wj = await getJSON(`data/v3/${name}-widths.json`); if (wj.roads_updated === c.updated) widths = wj.w; } catch (e) { }
+    const g = Core.build(c, widths); Z = null; G = g; liveArea = area || null;
+    applySignals(); drawCams(); loadReports(); drawWidths();
     if (!A || !B) idle();
     if (A && B) go();
   }
@@ -223,7 +225,7 @@
   }
   function routeOpts(mode, when) {
     const sp = speeds(false, when), car = opt.vehicle === 'car';
-    const base = { who: opt.vehicle, realSp: sp, narrowFactor: car ? 2.5 : 1, pen: car ? pen.car : pen.bike, block };
+    const base = { who: opt.vehicle, realSp: sp, narrowFactor: car ? 2.5 : 1, pen: car ? pen.car : pen.bike, block, narrowBlock: car && !relaxNarrow };
     if (mode === 'short') return { ...base, mode: 'short', costSp: sp };
     if (mode === 'few') return { ...base, mode: 'time', P: 900, costSp: sp };
     if (mode === 'gali') return { ...base, mode: 'time', P: lightWait() * 1.5, costSp: speeds(true, when) };
@@ -232,7 +234,8 @@
   function go() {
     routeLayer.clearLayers(); results = {}; $('result').innerHTML = '';
     if (!G || !A || !B) { updateHash(); idle(); return; }
-    const mask = Core.usable(G, routeOpts('best'));
+    relaxNarrow = false;
+    let mask = Core.usable(G, routeOpts('best'));
     const s = Core.nearest(G, A.lat, A.lng, mask), d = Core.nearest(G, B.lat, B.lng, mask);
     if (!s || !d || s.m > 800 || d.m > 800) { status(t('outside_area'), true); return; }
     if (s.i === d.i) { status(t('same_spot'), true); return; }
@@ -243,6 +246,7 @@
       const score = r.time + r.signals.length * lightWait() + c.m / 1.4;
       if (!best || score < best._score) { best = r; best._score = score; src = c.i; }
     }
+    if (!best && opt.vehicle === 'car' && !relaxNarrow) { relaxNarrow = true; return goRelaxed(); }
     if (!best) { status(t('no_route'), true); return; }
     results = { best };
     for (const m of ['gali', 'short', 'few']) results[m] = Core.route(G, Z, src, d.i, routeOpts(m));
@@ -254,6 +258,17 @@
     render();
     const bnd = L.latLngBounds([[A.lat, A.lng], [B.lat, B.lng]]);
     if (isPhone() || !map.getBounds().pad(-0.1).contains(bnd)) map.fitBounds(bnd, { padding: isPhone() ? [40, 40] : [60, 60], paddingBottomRight: isPhone() ? [30, Math.round($('panel').offsetHeight + 30)] : [60, 60] });
+  }
+  // A car can't reach the spot without a very narrow lane: route anyway (lanes still cost more) and say so
+  function goRelaxed() {
+    const mask = Core.usable(G, routeOpts('best'));
+    const s = Core.nearest(G, A.lat, A.lng, mask), d = Core.nearest(G, B.lat, B.lng, mask);
+    const best = s && d && Core.route(G, Z, s.i, d.i, routeOpts('best'));
+    if (!best) { status(t('no_route'), true); return; }
+    results = { best, _dst: d.i };
+    for (const m of ['gali', 'short', 'few']) { const r = Core.route(G, Z, s.i, d.i, routeOpts(m)); if (r) results[m] = r; }
+    if (!results[sel]) sel = 'best';
+    status(t('only_narrow'), true); updateHash(); saveRecent(); render();
   }
   const mins = r => Math.max(1, Math.round((r.time + r.signals.length * lightWait()) / 60));
   const km = r => (r.len / 1000).toFixed(r.len < 10000 ? 1 : 0);
@@ -280,7 +295,8 @@
       else if (ds > 0) why = t('why_skips', { n: ds, extra: dk > 0.05 ? t('km_more', { k: dk.toFixed(1) }) : t('same_dist') }) + (dm > 0 ? ' ' + t('saves_min', { n: dm }) : '');
       else why = dk > 0.05 ? t('why_longer_quicker', { k: dk.toFixed(1) }) : t('why_quickest');
     }
-    const warn = opt.vehicle === 'car' && cur.narrow > 100 ? `<div class="warn">${esc(t('narrow_warn', { k: (cur.narrow / 1000).toFixed(1) }))}</div>` : '';
+    const warn = opt.vehicle !== 'car' ? '' : cur.tight > 40 ? `<div class="warn">${esc(t('tight_warn', { k: (cur.tight / 1000).toFixed(1), w: cur.minW.toFixed(1) }))}</div>`
+      : cur.narrow > 100 ? `<div class="warn">${esc(t('narrow_warn', { k: (cur.narrow / 1000).toFixed(1) }))}</div>` : '';
     const repOn = reportsOnRoute(cur).filter(x => x.t !== 'redlight');
     const repWarn = repOn.length ? `<div class="warn">${esc(t('reports_on_route', { list: [...new Set(repOn.map(x => REPORT[x.t].icon + ' ' + t('rep_' + x.t)))].join(', ') }))}</div>` : '';
     const sameKey = r => r.path.length + '|' + r.len.toFixed(0);
@@ -736,6 +752,7 @@
     r.signalAt.forEach((k, i) => ev.push({ at: r.cum[k], kind: 'light', sure: Z.clusters[r.signals[i]].kind === 'sure' }));
     for (const [la, lo] of camPoints()) { let bd = Infinity, at = 0; for (let k = 0; k < r.path.length; k++) { const d = Core.hav(la, lo, G.lat[r.path[k]], G.lon[r.path[k]]); if (d < bd) { bd = d; at = r.cum[k]; } } if (bd < 40) ev.push({ at, kind: 'cam' }); }
     for (const rep of reportsOnRoute(r)) if (['police', 'pothole', 'water', 'jam', 'block'].includes(rep.t)) ev.push({ at: rep.at, kind: 'rep', t: rep.t });
+    if (opt.vehicle === 'car') for (const [k, w] of r.tightAt || []) ev.push({ at: r.cum[k], kind: 'tight', w });
     return ev.sort((a, b) => a.at - b.at);
   }
   function setNavRoute(r) {
@@ -797,7 +814,7 @@
       const d = e.at - along, id = e.kind + Math.round(e.at);
       if (d < 0 || nav.said.has(id)) continue;
       const lim = e.kind === 'rep' ? 300 : 150;
-      if (d < lim) { nav.said.add(id); speak(e.kind === 'light' ? t('v_light') : e.kind === 'cam' ? t('v_cam') : t('v_rep_' + e.t)); break; }
+      if (d < lim) { nav.said.add(id); speak(e.kind === 'light' ? t('v_light') : e.kind === 'cam' ? t('v_cam') : e.kind === 'tight' ? t('v_tight', { w: Math.round(e.w) }) : t('v_rep_' + e.t)); break; }
     }
     drawNav(along, left);
   }
@@ -833,6 +850,26 @@
     },
     state: () => ({ nav: !!nav, text: $('navText').textContent, dist: $('navDist').textContent, left: $('navLeft').textContent, said: nav ? [...nav.said] : [] })
   };
+
+  /* ---------------- street width layer ---------------- */
+  map.createPane('widths'); map.getPane('widths').style.zIndex = 350; // under routes and markers
+  const widthRenderer = L.canvas({ pane: 'widths' }), widthLayer = L.layerGroup().addTo(map);
+  function drawWidths() {
+    widthLayer.clearLayers();
+    if (!opt.widths || !G || !G.widths) return;
+    if (map.getZoom() < 15) { if (opt.widths) hint(t('zoom_for_widths')); return; }
+    hint('');
+    const b = map.getBounds().pad(0.1); let n = 0;
+    for (let wi = 0; wi < G.ways.length && n < 4000; wi++) {
+      const dm = G.widths[wi]; if (!dm) continue;
+      const ns = G.ways[wi].slice(2);
+      if (!ns.some(i => b.contains([G.lat[i], G.lon[i]]))) continue;
+      const m = dm / 10, col = m < 3.5 ? '#e5383b' : m < 5 ? '#f2a516' : '#1f9d55';
+      L.polyline(ns.map(i => [G.lat[i], G.lon[i]]), { color: col, weight: 4, opacity: .7, renderer: widthRenderer, pane: 'widths' }).bindTooltip(t('width_tip', { w: m.toFixed(1) })).addTo(widthLayer);
+      n++;
+    }
+  }
+  map.on('moveend zoomend', drawWidths);
 
   /* ---------------- savings ---------------- */
   function weekKey(d = new Date()) { const x = new Date(d); x.setHours(0, 0, 0, 0); x.setDate(x.getDate() - ((x.getDay() + 6) % 7)); return x.toISOString().slice(0, 10); }
@@ -927,6 +964,7 @@
     $('trWrap').hidden = !motor();
     $('trSel').options[0].textContent = t('auto_tr', { t: t('tr_' + autoTraffic()) }); $('trSel').value = opt.traffic;
     $('citySel').value = opt.city; $('langSel').value = opt.lang; $('themeSel').value = opt.theme;
+    $('widths').checked = opt.widths;
     $('voice').checked = opt.voice; $('likely').checked = opt.likely; $('wait').value = opt.wait; $('wv').textContent = opt.wait + ' s';
   }
   $('vehSeg').onclick = e => { const b = e.target.closest('button'); if (!b) return; opt.vehicle = b.dataset.v; saveOpt(); drawOpts(); go(); };
@@ -934,6 +972,7 @@
   $('citySel').onchange = () => switchCity($('citySel').value);
   $('langSel').onchange = () => { opt.lang = $('langSel').value; saveOpt(); applyLang(); };
   $('themeSel').onchange = () => { opt.theme = $('themeSel').value; saveOpt(); applyTheme(); };
+  $('widths').onchange = () => { opt.widths = $('widths').checked; saveOpt(); if (opt.widths && !(G && G.widths)) toast(t('widths_none')); if (opt.widths && map.getZoom() < 15) map.setZoom(15); drawWidths(); };
   $('voice').onchange = () => { opt.voice = $('voice').checked; saveOpt(); if (opt.voice) speak(t('v_test')); };
   $('likely').onchange = () => { opt.likely = $('likely').checked; saveOpt(); if (G) { applySignals(); idle(); go(); } };
   $('wait').oninput = () => { $('wv').textContent = $('wait').value + ' s'; };
