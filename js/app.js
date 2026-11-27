@@ -69,7 +69,7 @@
   function setBase() {
     if (baseLayer) map.removeLayer(baseLayer);
     baseLayer = gameOn()
-      ? L.maplibreGL({ style: 'styles/game.json?v=20', attribution: '&copy; <a href="https://openfreemap.org">OpenFreeMap</a> &copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>' })
+      ? L.maplibreGL({ style: 'styles/game.json?v=21', attribution: '&copy; <a href="https://openfreemap.org">OpenFreeMap</a> &copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>' })
       : L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 19, attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>' });
     baseLayer.addTo(map);
     document.body.classList.toggle('game', gameOn());
@@ -796,8 +796,15 @@
     return null;
   }
   const following = () => nav ? nav.follow : (me.mode === 'follow' || me.mode === 'compass');
-  const rotating = () => (nav ? nav.follow && opt.rotate : me.mode === 'compass') && me.head != null;
+  const rotating = () => nav ? nav.follow && opt.rotate : me.mode === 'compass';
   const tilting = () => !!nav && nav.follow && opt.tilt && !document.body.classList.contains('radar');
+  // which way the MAP should face. Navigating: the road's direction (steady), or GPS direction when moving fast.
+  // The shaky phone compass is only used for the map in compass mode; the beam on your dot always uses it.
+  function mapTarget() {
+    if (nav) { if (me.speed > 3 && me.gpsHead != null) return me.gpsHead; if (nav.routeHead != null) return nav.routeHead; return me.head; }
+    return me.head;
+  }
+  const angDist = (a, b) => Math.abs(((b - a) % 360 + 540) % 360 - 180);
   function startLoop() { if (!rafId) { lastFrame = performance.now(); rafId = requestAnimationFrame(frame); } }
   function frame(now) {
     rafId = 0;
@@ -812,10 +819,14 @@
       if (f != null) { const before = me.head; me.head = angLerp(me.head, f, 1 - Math.exp(-dt / 250)); busy = busy || before == null || Math.abs(((f - me.head) % 360 + 540) % 360 - 180) > 0.5; }
       meMarker && meMarker.setLatLng(me.disp);
     }
-    const want = rotating() ? me.head : 0;
-    const before = me.mapRot;
-    me.mapRot = angLerp(me.mapRot, want, 1 - Math.exp(-dt / 320));
-    if (Math.abs(((want - me.mapRot) % 360 + 540) % 360 - 180) > 0.3) busy = true; else me.mapRot = want;
+    // rotating: follow the target, ignoring small wobbles. Not rotating: navigating or looking around keeps the current angle
+    // (no spinning while you drag); plain follow mode outside navigation turns back to north.
+    let want = me.mapRot;
+    if (rotating()) { const tg = mapTarget(); if (tg != null) { if (me.rotGoal == null || angDist(me.rotGoal, tg) > (nav ? 4 : 8)) me.rotGoal = tg; want = me.rotGoal; } }
+    else if (!nav && (me.mode !== 'free' || pointers.size === 0)) { want = 0; me.rotGoal = null; }
+    else me.rotGoal = null;
+    me.mapRot = angLerp(me.mapRot, want, 1 - Math.exp(-dt / 600));
+    if (angDist(want, me.mapRot) > 0.2) busy = true; else me.mapRot = want;
     applyCamera();
     const el = meMarker && meMarker.getElement && meMarker.getElement(), d = el && el.querySelector('.me');
     if (d) { d.style.setProperty('--h', (me.head || 0) + 'deg'); d.classList.toggle('dir', me.head != null); }
@@ -832,25 +843,28 @@
   map.on('zoomend', () => { clearTimeout(zoomT); zoomT = setTimeout(() => { zoomingNow = false; startLoop(); }, 60); });
   // while following, zooming (pinch, wheel, double-tap) keeps you in the middle instead of fighting the camera
   function zoomAround() {
-    const c = following() ? 'center' : true;
+    const c = following() || document.body.classList.contains('rotmap') ? 'center' : true;
     map.options.touchZoom = c; map.options.scrollWheelZoom = c; map.options.doubleClickZoom = c;
   }
   // heading-up rotation and 3D tilt: the map sits in an oversized square (#rot) that we turn with CSS
   const rotEl = $('rot'), wrapEl = $('mapwrap');
   let camState = '';
+  // The turned/tilted mode is switched on ONCE (start of navigation or compass mode) and kept until it ends,
+  // so the map is never resized in the middle of a zoom or a drag. Tilt fades in and out with CSS.
   function applyCamera() {
     const off0 = Math.min(Math.abs(me.mapRot), 360 - Math.abs(me.mapRot));
-    const on = off0 > 0.05 || rotating() || tilting();
+    const on = !!nav || me.mode === 'compass' || off0 > 0.2;
     const tilt = tilting();
-    const state = (on ? 'r' : '') + (tilt ? 't' : '') + (document.body.classList.contains('radar') ? 'R' : '');
+    const radar = document.body.classList.contains('radar');
+    const state = (on ? 'r' : '') + (nav ? 'n' : '') + (radar ? 'R' : '');
     zoomAround();
-    if (state !== camState && !zoomingNow) {
+    document.body.classList.toggle('tilted', tilt);
+    if (state !== camState && !zoomingNow && pointers.size === 0) {
       camState = state;
       document.body.classList.toggle('rotmap', on);
-      document.body.classList.toggle('tilted', tilt);
-      if (on) { const w = wrapEl.clientWidth, hh = wrapEl.clientHeight, dd = Math.ceil(Math.hypot(w, hh) * (tilt ? 2.1 : 1.05)); rotEl.style.width = rotEl.style.height = dd + 'px'; map.dragging.disable(); }
+      if (on) { const w = wrapEl.clientWidth, hh = wrapEl.clientHeight, dd = Math.ceil(Math.hypot(w, hh) * (nav && !radar ? 2.1 : 1.05)); rotEl.style.width = rotEl.style.height = dd + 'px'; map.dragging.disable(); }
       else { rotEl.style.width = rotEl.style.height = ''; map.dragging.enable(); }
-      map.invalidateSize({ pan: false });
+      map.invalidateSize({ animate: false }); // keeps the same centre
       if (me.disp && following()) map.setView(me.disp, map.getZoom(), { animate: false });
     }
     rotEl.style.setProperty('--rot', (-me.mapRot) + 'deg');
@@ -863,11 +877,18 @@
     pointers.set(e.pointerId, { x: e.clientX, y: e.clientY, moved: false });
   });
   wrapEl.addEventListener('pointermove', e => {
-    const pt = pointers.get(e.pointerId); if (!pt || pointers.size > 1 || pt.moved) return;
-    if (Math.hypot(e.clientX - pt.x, e.clientY - pt.y) < 12) return;
-    pt.moved = true;
-    if (nav && nav.follow) { nav.follow = false; $('navCenter').hidden = false; startLoop(); }
-    else if (!nav && (me.mode === 'follow' || me.mode === 'compass')) { me.mode = 'free'; drawMeBtn(); startLoop(); }
+    const pt = pointers.get(e.pointerId); if (!pt || pointers.size > 1) return;
+    if (!pt.moved) {
+      if (Math.hypot(e.clientX - pt.x, e.clientY - pt.y) < 10) return;
+      pt.moved = true; pt.lx = e.clientX; pt.ly = e.clientY;
+      if (nav && nav.follow) { nav.follow = false; $('navCenter').hidden = false; startLoop(); }
+      else if (!nav && (me.mode === 'follow' || me.mode === 'compass')) { me.mode = 'free'; drawMeBtn(); startLoop(); }
+      return;
+    }
+    if (!document.body.classList.contains('rotmap')) return; // normal map: Leaflet drags it
+    const dx = e.clientX - pt.lx, dy = e.clientY - pt.ly; pt.lx = e.clientX; pt.ly = e.clientY;
+    const a = me.mapRot * Math.PI / 180, mx = dx * Math.cos(a) - dy * Math.sin(a), my = dx * Math.sin(a) + dy * Math.cos(a);
+    map.panBy([-mx, -my], { animate: false });
   });
   const pointerUp = e => { pointers.delete(e.pointerId); if (!pointers.size) startLoop(); };
   wrapEl.addEventListener('pointerup', pointerUp); wrapEl.addEventListener('pointercancel', pointerUp); wrapEl.addEventListener('pointerleave', pointerUp);
@@ -937,7 +958,12 @@
     speak(t('v_start', { n: mins(r) }));
     drawNav(0, r.len);
     if (navigator.geolocation && !window.__grSim) watchId = navigator.geolocation.watchPosition(onPos, () => toast(t('geo_denied')), { enableHighAccuracy: true, maximumAge: 1000, timeout: 15000 });
-    map.setView([G.lat[r.path[0]], G.lon[r.path[0]]], 17);
+    { const p0 = r.path[0], p1 = r.path[Math.min(3, r.path.length - 1)];
+      nav.routeHead = (Core.bearing(G.lat[p0], G.lon[p0], G.lat[p1], G.lon[p1]) + 360) % 360;
+      if (!me.target) showMe([G.lat[p0], G.lon[p0]]);
+      me.rotGoal = null;
+      map.setView(me.target || [G.lat[p0], G.lon[p0]], 17, { animate: false }); }
+    camState = ''; startLoop();
   }
   function stopNav(arrived) {
     if (watchId != null) navigator.geolocation.clearWatch(watchId); watchId = null;
