@@ -370,3 +370,20 @@ body.radar.navigating #radarDist{display:block;position:fixed;z-index:1401;left:
 body:not(.navigating) #streetName{display:none}
 body.radar #mapwrap .fab{display:none!important}
 body.pausemap .toast{bottom:auto!important;top:calc(70px + env(safe-area-inset-top))}
+
+/* ---------- phone bottom sheet (v31): compact card with Start, swipe up for details ---------- */
+@media(max-width:760px){
+  #panel{transition:max-height .25s ease}
+  #panel.min.has-route{max-height:none;overflow:hidden;padding-top:2px}
+  #panel.min.has-route>:not(.handle):not(#result){display:none!important}
+  #panel.min.has-route #result>:not(.hero){display:none!important}
+  #panel.min.has-route .hero{flex-direction:row;flex-wrap:wrap;align-items:center;justify-content:space-between;padding:10px 12px;gap:8px}
+  #panel.min.has-route .hero>:not(.t):not(.acts){display:none!important}
+  #panel.min.has-route .hero .t{font-size:28px;line-height:1.1;display:flex;flex-direction:column}
+  #panel.min.has-route .hero .t small{margin:0;font-size:14px}
+  #panel.min.has-route .hero .acts{flex:none;margin:0}
+  #panel.min.has-route #share{display:none}
+  #panel.min.has-route .go{padding:0 22px;min-height:48px}
+  .handle{position:relative}
+  #panel.min.has-route .handle::after{content:"⌃";position:absolute;right:6px;top:2px;font-size:16px;opacity:.5}
+}

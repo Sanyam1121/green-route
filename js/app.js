@@ -70,7 +70,7 @@
   function setBase() {
     if (baseLayer) map.removeLayer(baseLayer);
     baseLayer = gameOn()
-      ? L.maplibreGL({ style: 'styles/game.json?v=30', updateInterval: 0, attribution: '&copy; <a href="https://openfreemap.org">OpenFreeMap</a> &copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>' })
+      ? L.maplibreGL({ style: 'styles/game.json?v=31', updateInterval: 0, attribution: '&copy; <a href="https://openfreemap.org">OpenFreeMap</a> &copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>' })
       : L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 19, attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>' });
     if (baseLayer._roundPoint) baseLayer._roundPoint = p => p; // sub-pixel placement keeps the basemap glued to the route line
     baseLayer.addTo(map);
@@ -293,6 +293,7 @@
     status(t('tap_compare'));
     updateHash(); saveRecent();
     render();
+    if (isPhone()) sheet(false); // new route on a phone: compact card, map in view
     const bnd = L.latLngBounds([[A.lat, A.lng], [B.lat, B.lng]]);
     if (!paused() && (isPhone() || !map.getBounds().pad(-0.1).contains(bnd))) map.fitBounds(bnd, { padding: isPhone() ? [40, 40] : [60, 60], paddingBottomRight: isPhone() ? [30, Math.round($('panel').offsetHeight + 30)] : [60, 60] });
   }
@@ -384,7 +385,7 @@
     for (const b of document.querySelectorAll('.saverow button')) b.onclick = () => savePlace(b.dataset.p);
     $('share').onclick = share; $('startNav').onclick = startNav;
     $('gmaps').onclick = () => recordTrip(cur);
-    $('panel').classList.remove('min');
+    $('panel').classList.add('has-route');
   }
   // "Leave now or later?" — same trip at +15/+30/+60 minutes using the time-of-day traffic guess
   function leaveRow() {
@@ -1895,6 +1896,7 @@
 
   /* ---------------- idle state ---------------- */
   function idle() {
+    $('panel').classList.remove('has-route');
     if (!G) return;
     const sure = Z.clusters.filter(c => c.kind === 'sure').length, lk = Z.clusters.length - sure;
     status(t('mapped', { s: sure, l: lk, c: G.cams.length + localReports.filter(r => r.t === 'camera').length }) + ' ' + dataNote);
@@ -1996,7 +1998,22 @@
   $('swap').onclick = () => { if (!A || !B) return; const a = A, qa = $('qA').value, qb = $('qB').value; setPoint('A', B, qb, true); setPoint('B', a, qa, true); go(); };
   $('clear').onclick = () => { A = B = null; if (mA) map.removeLayer(mA); if (mB) map.removeLayer(mB); mA = mB = null; $('qA').value = $('qB').value = ''; drawQuick(); go(); };
   $('area').onclick = () => { const b = map.getBounds(), s = [b.getSouth(), b.getWest(), b.getNorth(), b.getEast()]; if ((s[2] - s[0]) * (s[3] - s[1]) > 0.04) { toast(t('zoom_in_more')); return; } loadCity(opt.city, s); };
-  $('handle').onclick = () => $('panel').classList.toggle('min');
+  // phone bottom sheet: compact (time + Start) or full; tap or swipe the handle, and moving the map tucks it away
+  function sheet(open) { const pn = $('panel'); pn.classList.toggle('min', !open); if (!open) pn.scrollTop = 0; }
+  $('handle').onclick = () => sheet($('panel').classList.contains('min'));
+  {
+    const pn = $('panel'); let y0 = null, st0 = 0;
+    pn.addEventListener('touchstart', e => { y0 = e.touches[0].clientY; st0 = pn.scrollTop; }, { passive: true });
+    pn.addEventListener('touchmove', e => {
+      if (y0 == null || !isPhone()) return;
+      const dy = e.touches[0].clientY - y0;
+      if (dy > 45 && st0 <= 0 && pn.scrollTop <= 0 && !pn.classList.contains('min')) { sheet(false); y0 = null; }
+      else if (dy < -45 && pn.classList.contains('min')) { sheet(true); y0 = null; }
+    }, { passive: true });
+    pn.addEventListener('touchend', () => { y0 = null; }, { passive: true });
+    const tuck = () => { if (isPhone() && !nav && pn.classList.contains('has-route') && !pn.classList.contains('min')) sheet(false); };
+    map.on('dragstart', tuck); map.on('click', tuck);
+  }
   $('locA').onclick = () => locate(true);
   $('me').onclick = cycleMe;
   $('repBtn').onclick = openReport;
