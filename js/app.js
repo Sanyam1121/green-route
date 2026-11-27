@@ -20,7 +20,7 @@
     amritsar: { bbox: [31.59, 74.81, 31.68, 74.93], center: [31.634, 74.873] },
     phagwara: { bbox: [31.20, 75.74, 31.25, 75.80], center: [31.224, 75.770] },
   };
-  const opt = Object.assign({ vehicle: 'car', traffic: 'auto', lang: 'en', theme: 'auto', voice: true, likely: true, wait: 45, city: 'jalandhar', widths: false, chowks: true, look: 'game', rotate: true, tilt: true }, store.get('gr-opt', {}));
+  const opt = Object.assign({ blips: true, blipHide: [], vehicle: 'car', traffic: 'auto', lang: 'en', theme: 'auto', voice: true, likely: true, wait: 45, city: 'jalandhar', widths: false, chowks: true, look: 'game', rotate: true, tilt: true }, store.get('gr-opt', {}));
   if (!CITIES[opt.city]) opt.city = 'jalandhar';
   const saveOpt = () => store.set('gr-opt', opt);
 
@@ -69,7 +69,7 @@
   function setBase() {
     if (baseLayer) map.removeLayer(baseLayer);
     baseLayer = gameOn()
-      ? L.maplibreGL({ style: 'styles/game.json?v=23', updateInterval: 0, attribution: '&copy; <a href="https://openfreemap.org">OpenFreeMap</a> &copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>' })
+      ? L.maplibreGL({ style: 'styles/game.json?v=24', updateInterval: 0, attribution: '&copy; <a href="https://openfreemap.org">OpenFreeMap</a> &copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>' })
       : L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 19, attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>' });
     if (baseLayer._roundPoint) baseLayer._roundPoint = p => p; // sub-pixel placement keeps the basemap glued to the route line
     baseLayer.addTo(map);
@@ -134,7 +134,7 @@
     photoSignals = [];
     if (!area) try { photoSignals = (await getJSON(`data/v3/${name}-signals.json`)).s || []; } catch (e) { }
     status(t('preparing')); await new Promise(r => setTimeout(r, 20));
-    if (!area) { await loadPlaces(name); await loadChowks(name); }
+    if (!area) { await loadPlaces(name); await loadChowks(name); drawBlips(); }
     let widths = null;
     if (!area) try { const wj = await getJSON(`data/v3/${name}-widths.json`); if (wj.roads_updated === c.updated) widths = wj.w; } catch (e) { }
     const g = Core.build(c, widths); Z = null; G = g; liveArea = area || null;
@@ -799,9 +799,10 @@
     if (nav && nav.routeHead != null) return nav.routeHead;
     return null;
   }
-  const following = () => nav ? nav.follow : (me.mode === 'follow' || me.mode === 'compass');
-  const rotating = () => nav ? nav.follow && opt.rotate : me.mode === 'compass';
-  const tilting = () => !!nav && nav.follow && opt.tilt && !document.body.classList.contains('radar');
+  const isPaused = () => document.body.classList.contains('pausemap');
+  const following = () => !isPaused() && (nav ? nav.follow : (me.mode === 'follow' || me.mode === 'compass'));
+  const rotating = () => !isPaused() && (nav ? nav.follow && opt.rotate : me.mode === 'compass');
+  const tilting = () => !!nav && nav.follow && opt.tilt && !isPaused() && !document.body.classList.contains('radar');
   // which way the MAP should face. Navigating: the road's direction (steady), or GPS direction when moving fast.
   // The shaky phone compass is only used for the map in compass mode; the beam on your dot always uses it.
   function mapTarget() {
@@ -865,7 +866,7 @@
         want = me.rotGoal;
       }
     }
-    else if (!nav && (me.mode !== 'free' || pointers.size === 0)) { want = 0; me.rotGoal = null; }
+    else if (isPaused() || (!nav && (me.mode !== 'free' || pointers.size === 0))) { want = 0; me.rotGoal = null; }
     else me.rotGoal = null;
     me.mapRot = angLerp(me.mapRot, want, 1 - Math.exp(-dt / tau));
     if (angDist(want, me.mapRot) > 0.05) busy = true; else me.mapRot = want;
@@ -899,16 +900,16 @@
   const northEl = $('northBlip');
   function applyCamera(dt = 16) {
     const off0 = Math.min(Math.abs(me.mapRot), 360 - Math.abs(me.mapRot));
-    const on = !!nav || me.mode === 'compass' || off0 > 0.2;
+    const on = isPaused() ? off0 > 0.2 : (!!nav || me.mode === 'compass' || off0 > 0.2);
     const tilt = tilting();
     const radar = document.body.classList.contains('radar');
-    const state = (on ? 'r' : '') + (nav ? 'n' : '') + (radar ? 'R' : '');
+    const state = (on ? 'r' : '') + (nav ? 'n' : '') + (radar ? 'R' : '') + (isPaused() ? 'P' : '');
     zoomAround();
     document.body.classList.toggle('tilted', tilt);
     if (state !== camState && !zoomingNow && pointers.size === 0) {
       camState = state;
       document.body.classList.toggle('rotmap', on);
-      if (on) { const w = wrapEl.clientWidth, hh = wrapEl.clientHeight, dd = Math.ceil(Math.hypot(w, hh) * (nav && !radar ? 2.1 : 1.05)); rotEl.style.width = rotEl.style.height = dd + 'px'; map.dragging.disable(); }
+      if (on) { const w = wrapEl.clientWidth, hh = wrapEl.clientHeight, dd = Math.ceil(Math.hypot(w, hh) * (nav && !radar && !isPaused() ? 2.1 : 1.05)); rotEl.style.width = rotEl.style.height = dd + 'px'; map.dragging.disable(); }
       else { rotEl.style.width = rotEl.style.height = ''; map.dragging.enable(); }
       map.invalidateSize({ animate: false }); // keeps the same centre
       if (me.disp && following()) map.setView(me.disp, map.getZoom(), { animate: false });
@@ -1195,6 +1196,132 @@
     return () => { if (tm) return; const wait = Math.max(ms, 400 - (Date.now() - last)); tm = setTimeout(run, wait); }; };
   map.on('moveend', settle(drawChowks));
 
+  /* ---------------- map blips: round game-style icons for useful places ---------------- */
+  const BLIP = { // order = priority when icons crowd; z = smallest zoom where it shows
+    police: { z: 13, bg: '#2f6fd6', svg: '<path d="M8 1.8l1.8 3.9 4.2.5-3.1 2.9.8 4.2L8 11.2l-3.7 2.1.8-4.2L2 6.2l4.2-.5z"/>' },
+    fuel: { z: 13, bg: '#e0522f', svg: '<path d="M3 2.5h6.5v11H3z"/><path d="M4.3 4h3.9v3H4.3z" fill="#e0522f"/><path d="M9.5 5.5l2.2 1.6v4.4a.9.9 0 0 0 1.8 0V6L12 4.3" fill="none" stroke="#fff" stroke-width="1.3" stroke-linecap="round"/>' },
+    train: { z: 12, bg: '#5d6d79', svg: '<rect x="4" y="2" width="8" height="9.5" rx="2"/><rect x="5.3" y="3.6" width="5.4" height="3" rx=".6" fill="#0007"/><path d="M5 12.5l-1.5 2M11 12.5l1.5 2" stroke="#fff" stroke-width="1.3" stroke-linecap="round"/>' },
+    bus: { z: 13, bg: '#e5a321', svg: '<rect x="3" y="2.5" width="10" height="9.5" rx="1.8"/><rect x="4.3" y="4" width="7.4" height="3.4" rx=".5" fill="#0006"/><circle cx="5.3" cy="13" r="1.2"/><circle cx="10.7" cy="13" r="1.2"/>' },
+    ev: { z: 14, bg: '#2aa3b8', svg: '<path d="M9.2 1.8 4 9h3.5l-1 5.2L12 7H8.4z"/>' },
+    hospital: { z: 15, cap: 18, bg: '#ffffff', svg: '<path d="M6.3 2.5h3.4v3.8h3.8v3.4H9.7v3.8H6.3V9.7H2.5V6.3h3.8z" fill="#e23b3b"/>' },
+    cinema: { z: 15, bg: '#c43d8a', svg: '<path d="M5.5 3.5v9l7-4.5z"/>' },
+    market: { z: 15, cap: 15, bg: '#d9822b', svg: '<path d="M3.5 5.5h9l-.8 8h-7.4z"/><path d="M6 6V4.5a2 2 0 0 1 4 0V6" fill="none" stroke="#fff" stroke-width="1.3"/>' },
+    gurdwara: { z: 15, bg: '#e08a1e', svg: '<text x="8" y="12.2" text-anchor="middle" font-size="11" font-weight="700" font-family="Noto Sans Gurmukhi,sans-serif">ੴ</text>' },
+    mosque: { z: 15, bg: '#2e9e5b', svg: '<text x="8" y="12.4" text-anchor="middle" font-size="12" font-family="sans-serif">☪</text>' },
+    church: { z: 15, bg: '#5d6d79', svg: '<path d="M7 2h2v3.5h3v2H9V14H7V7.5H4v-2h3z"/>' },
+    temple: { z: 16, cap: 15, bg: '#e08a1e', svg: '<text x="8" y="12.2" text-anchor="middle" font-size="11" font-weight="700" font-family="Noto Sans Devanagari,sans-serif">ॐ</text>' },
+    atm: { z: 16, cap: 15, bg: '#3aa55a', svg: '<text x="8" y="12.4" text-anchor="middle" font-size="12" font-weight="800" font-family="system-ui,sans-serif">₹</text>' },
+    pharmacy: { z: 16, bg: '#ffffff', svg: '<path d="M6.3 2.5h3.4v3.8h3.8v3.4H9.7v3.8H6.3V9.7H2.5V6.3h3.8z" fill="#2e9e5b"/>' },
+  };
+  const BLIP_ORDER = Object.keys(BLIP);
+  const blipHtml = ty => `<div class="blip" style="--b:${BLIP[ty].bg}"><svg viewBox="0 0 16 16" fill="#fff">${BLIP[ty].svg}</svg></div>`;
+  map.createPane('blips'); map.getPane('blips').style.zIndex = 615;
+  const blipLayer = L.layerGroup().addTo(map);
+  let blipCounts = {};
+  function drawBlips() {
+    blipLayer.clearLayers(); blipCounts = {};
+    const pm = paused();
+    if (!opt.blips || !PL.length) { if (pm) drawLegend(); return; }
+    const z = map.getZoom(), b = map.getBounds().pad(0.15), hide = new Set(opt.blipHide || []);
+    const cand = [];
+    for (const p of PL) {
+      const def = BLIP[p.ty]; if (!def || !b.contains([p.la, p.lo])) continue;
+      blipCounts[p.ty] = (blipCounts[p.ty] || 0) + 1;
+      if (hide.has(p.ty) || z < def.z - (pm ? 1 : 0)) continue;
+      cand.push(p);
+    }
+    cand.sort((a, c) => BLIP_ORDER.indexOf(a.ty) - BLIP_ORDER.indexOf(c.ty));
+    // one icon per ~40 px square, and busy types (hospitals, temples, ATMs) capped so they don't bury the rest
+    const used = new Set(), cell = 40, per = {}; let n = 0;
+    for (const p of cand) {
+      const cap = BLIP[p.ty].cap; if (cap && (per[p.ty] || 0) >= cap) continue;
+      const pt = map.latLngToLayerPoint([p.la, p.lo]), key = Math.floor(pt.x / cell) + ',' + Math.floor(pt.y / cell);
+      if (used.has(key)) continue; used.add(key); per[p.ty] = (per[p.ty] || 0) + 1;
+      const m = L.marker([p.la, p.lo], { icon: L.divIcon({ className: '', html: blipHtml(p.ty), iconSize: [22, 22], iconAnchor: [11, 11] }), pane: 'blips', keyboard: false, title: p.n }).addTo(blipLayer);
+      m.on('click', e => { L.DomEvent.stop(e); placePopup(p.n, t('ty_' + p.ty), [p.la, p.lo]); });
+      if (++n >= 90) break;
+    }
+    if (pm) drawLegend();
+  }
+  function placePopup(name, sub, ll) {
+    const div = document.createElement('div'); div.className = 'pop';
+    div.innerHTML = `<b>${esc(name)}</b><small>${esc(sub)}</small><button data-a="to">${esc(t('route_here'))}</button>${nav ? '' : `<button data-a="from">${esc(t('start_here'))}</button>`}`;
+    div.onclick = e => { const a = e.target.dataset.a; if (!a) return; map.closePopup(); setWaypoint(a === 'to' ? 'B' : 'A', ll, name); };
+    L.popup({ offset: [0, -6] }).setLatLng(ll).setContent(div).openOn(map);
+  }
+  map.on('moveend', settle(drawBlips));
+
+  /* ---------------- pause map: full screen, north up, legend, tap to set a waypoint ---------------- */
+  function paused() { return document.body.classList.contains('pausemap'); }
+  let pauseWasFollow = false;
+  function openPause() {
+    if (paused()) return;
+    map.closePopup(); setRadar(false);
+    pauseWasFollow = !!(nav && nav.follow); if (nav) nav.follow = false;
+    if (me.mode === 'follow' || me.mode === 'compass') { me.mode = 'free'; drawMeBtn(); }
+    me.mapRot = 0; me.rotGoal = null; camState = '';
+    document.body.classList.add('pausemap');
+    const cs = $('citySel'); $('pmCity').textContent = cs && cs.selectedOptions[0] ? cs.selectedOptions[0].textContent : '';
+    setTimeout(() => {
+      map.invalidateSize({ animate: false });
+      const r = nav ? nav.r : results && results[sel];
+      if (r && r.path && r.path.length > 1) map.fitBounds(L.latLngBounds(r.path.map(i => [G.lat[i], G.lon[i]])), { paddingTopLeft: [50, 80], paddingBottomRight: [innerWidth > 760 ? 260 : 50, innerWidth > 760 ? 50 : 240], animate: false });
+      else map.setZoom(Math.max(13, map.getZoom() - 1), { animate: false });
+      drawBlips(); drawLegend();
+    }, 40);
+    startLoop();
+  }
+  function closePause() {
+    if (!paused()) return;
+    map.closePopup();
+    document.body.classList.remove('pausemap'); camState = '';
+    setTimeout(() => {
+      map.invalidateSize({ animate: false });
+      if (nav && pauseWasFollow) { nav.follow = true; $('navCenter').hidden = true; if (me.disp) map.setView(me.disp, 17, { animate: false }); }
+      else if (nav) $('navCenter').hidden = false;
+      drawBlips(); startLoop();
+    }, 40);
+  }
+  const LEGEND_FIXED = [
+    ['route', '<i class="lg-line"></i>'], ['you', '<svg class="lg-arw" viewBox="0 0 24 24"><path d="M12 2.5 19.5 21 12 16.6 4.5 21z"/></svg>'],
+    ['chowk', '<i class="lg-chowk"></i>'], ['light', '<i class="lg-dot" style="background:#e5383b"></i>'], ['likely', '<i class="lg-dot" style="background:#f2a516"></i>'],
+  ];
+  function drawLegend() {
+    const hide = new Set(opt.blipHide || []);
+    let h = LEGEND_FIXED.map(([k, ic]) => `<button class="lg ${k === 'chowk' && !opt.chowks ? 'off' : ''}" data-fixed="${k}" ${k === 'chowk' ? '' : 'disabled'}><span class="lg-ic">${ic}</span><span>${esc(t('lg_' + k))}</span></button>`).join('');
+    h += `<div class="lg-sep">${esc(t('lg_places'))}</div>`;
+    h += BLIP_ORDER.map(ty => `<button class="lg ${hide.has(ty) || !opt.blips ? 'off' : ''}" data-ty="${ty}"><span class="lg-ic">${blipHtml(ty)}</span><span>${esc(t('ty_' + ty))}</span><em>${blipCounts[ty] || ''}</em></button>`).join('');
+    $('legendList').innerHTML = h;
+  }
+  $('legendList').addEventListener('click', e => {
+    const b = e.target.closest('button'); if (!b) return;
+    if (b.dataset.fixed === 'chowk') { opt.chowks = !opt.chowks; $('chowksOn').checked = opt.chowks; saveOpt(); drawChowks(); drawLegend(); return; }
+    const ty = b.dataset.ty; if (!ty) return;
+    if (!opt.blips) { opt.blips = true; $('blipsOn').checked = true; opt.blipHide = BLIP_ORDER.filter(x => x !== ty); }
+    else { const hs = new Set(opt.blipHide || []); hs.has(ty) ? hs.delete(ty) : hs.add(ty); opt.blipHide = [...hs]; }
+    saveOpt(); drawBlips();
+  });
+  // set a waypoint (destination) or a start; during navigation a new waypoint restarts the route from where you are
+  function setWaypoint(which, ll, name) {
+    closePause();
+    if (nav && which === 'B') { const here = lastFix || me.disp; stopNav(); if (here) setPoint('A', here, t('my_location'), true); }
+    else if (nav) return;
+    if (which === 'B' && !A && lastFix) setPoint('A', lastFix, t('my_location'), true);
+    setPoint(which, ll, name);
+  }
+  function nearestName(ll) {
+    let best = null, bd = 60;
+    for (const p of PL) { if (Math.abs(p.la - ll.lat) > 0.001 || Math.abs(p.lo - ll.lng) > 0.001) continue; const d = Core.hav(p.la, p.lo, ll.lat, ll.lng); if (d < bd) { bd = d; best = p; } }
+    const c = chowkAt(ll.lat, ll.lng, 60);
+    return c ? c.n : best ? best.n : t('waypoint');
+  }
+  $('pauseBtn').onclick = openPause; $('navMap').onclick = openPause; $('pmClose').onclick = closePause;
+  addEventListener('keydown', e => {
+    if (e.key === 'Escape' && paused()) { closePause(); return; }
+    if (e.target.closest && e.target.closest('input,textarea,select')) return;
+    if ((e.key === 'm' || e.key === 'M') && !e.ctrlKey && !e.metaKey && !e.altKey) paused() ? closePause() : openPause();
+  }, true); // capture: Leaflet's keyboard handler would otherwise swallow Escape
+
   /* ---------------- street width layer ---------------- */
   map.createPane('widths'); map.getPane('widths').style.zIndex = 350; // under routes and markers
   const widthRenderer = L.canvas({ pane: 'widths' }), widthLayer = L.layerGroup().addTo(map);
@@ -1242,6 +1369,12 @@
 
   /* ---------------- map taps ---------------- */
   map.on('click', e => {
+    if (paused()) {
+      const name = nearestName(e.latlng), div = document.createElement('div'); div.className = 'pop';
+      div.innerHTML = `<b>${esc(name)}</b><button data-a="to">📍 ${esc(t('set_waypoint'))}</button>${nav ? '' : `<button data-a="from">${esc(t('start_here'))}</button>`}`;
+      div.onclick = ev => { const a = ev.target.dataset.a; if (!a) return; map.closePopup(); setWaypoint(a === 'to' ? 'B' : 'A', e.latlng, name); };
+      L.popup().setLatLng(e.latlng).setContent(div).openOn(map); return;
+    }
     if (document.body.classList.contains('rotmap')) return; // taps on a turned map land in the wrong place
     if (reportPick) { const ty = reportPick; reportPick = null; hint(''); postReport(ty, e.latlng.lat, e.latlng.lng); return; }
     if (editMode) { toggleSignal(e.latlng); return; }
@@ -1319,7 +1452,7 @@
     $('trWrap').hidden = !motor();
     $('trSel').options[0].textContent = t('auto_tr', { t: t('tr_' + autoTraffic()) }); $('trSel').value = opt.traffic;
     $('citySel').value = opt.city; $('langSel').value = opt.lang; $('themeSel').value = opt.theme; $('lookSel').value = opt.look;
-    $('widths').checked = opt.widths; $('chowksOn').checked = opt.chowks; $('rotateOn').checked = opt.rotate; $('tiltOn').checked = opt.tilt;
+    $('widths').checked = opt.widths; $('chowksOn').checked = opt.chowks; $('blipsOn').checked = opt.blips; $('rotateOn').checked = opt.rotate; $('tiltOn').checked = opt.tilt;
     $('voice').checked = opt.voice; $('likely').checked = opt.likely; $('wait').value = opt.wait; $('wv').textContent = opt.wait + ' s';
   }
   $('vehSeg').onclick = e => { const b = e.target.closest('button'); if (!b) return; opt.vehicle = b.dataset.v; saveOpt(); drawOpts(); go(); };
@@ -1331,6 +1464,7 @@
   $('rotateOn').onchange = () => { opt.rotate = $('rotateOn').checked; saveOpt(); startLoop(); };
   $('tiltOn').onchange = () => { opt.tilt = $('tiltOn').checked; saveOpt(); camState = ''; startLoop(); };
   $('chowksOn').onchange = () => { opt.chowks = $('chowksOn').checked; saveOpt(); drawChowks(); };
+  $('blipsOn').onchange = () => { opt.blips = $('blipsOn').checked; if (opt.blips) opt.blipHide = []; saveOpt(); drawBlips(); };
   $('widths').onchange = () => { opt.widths = $('widths').checked; saveOpt(); if (opt.widths && !(G && G.widths)) toast(t('widths_none')); if (opt.widths && map.getZoom() < 15) map.setZoom(15); drawWidths(); };
   $('voice').onchange = () => { opt.voice = $('voice').checked; saveOpt(); if (opt.voice) speak(t('v_test')); };
   $('likely').onchange = () => { opt.likely = $('likely').checked; saveOpt(); if (G) { applySignals(); idle(); go(); } };

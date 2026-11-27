@@ -17,7 +17,7 @@ body{background:var(--bg);color:var(--ink);font:15px/1.5 "Hanken Grotesk","Noto 
 body.rotmap #rot{will-change:transform;backface-visibility:hidden}
 body.tilted #mapwrap{background:linear-gradient(180deg,#050607 0%,#15181a 22%,#2f3336 45%)}
 body.rotmap #mapwrap{overflow:hidden}
-body.rotmap .chowk,body.rotmap .pin,body.rotmap .rep,body.rotmap .cam{rotate:calc(var(--rot) * -1)}
+body.rotmap .chowk,body.rotmap .blip,body.rotmap .pin,body.rotmap .rep,body.rotmap .cam{rotate:calc(var(--rot) * -1)}
 body.rotmap .leaflet-control-container{display:none}
 .handle{display:none}
 h1{margin:0;font-size:26px;line-height:1.05;font-weight:800;display:flex;align-items:center;gap:10px}
@@ -250,3 +250,42 @@ body.radar.navigating #hudBars{display:flex;gap:4px;position:fixed;z-index:1400;
 #hudBars b{flex:1;height:7px;background:#0a0b0c;box-shadow:0 0 0 2px #0a0b0c;overflow:hidden}
 #hudBars i{display:block;height:100%;width:0;transition:width .8s linear}
 #barProg{background:#5fbf5a}#barSpd{background:#4a8fd8}
+
+/* ---------- map blips (v24) ---------- */
+.blip{width:22px;height:22px;border-radius:50%;background:var(--b);box-shadow:0 0 0 2px #0a0b0c,0 2px 5px #0009;display:flex;align-items:center;justify-content:center;cursor:pointer}
+.blip svg{width:15px;height:15px;display:block}
+.map-fab{bottom:144px}
+@media(max-width:760px){.map-fab{bottom:auto;top:186px}}
+/* ---------- pause map ---------- */
+#pauseTop,#legend{display:none}
+body.pausemap #panel,body.pausemap .navui,body.pausemap #hudBars,body.pausemap .fab,body.pausemap .radar-btn,body.pausemap .hint,body.pausemap #northBlip{display:none!important}
+body.pausemap #app{display:block}
+body.pausemap #mapwrap{position:fixed!important;inset:0!important;width:auto!important;height:auto!important;border-radius:0;z-index:1450;animation:pmIn .28s ease}
+@keyframes pmIn{from{opacity:.2;transform:scale(1.04)}to{opacity:1;transform:none}}
+body.pausemap #mapwrap::after{background:radial-gradient(ellipse at center,transparent 50%,rgba(0,0,0,.5) 100%)}
+body.pausemap #pauseTop{display:flex;position:fixed;z-index:1500;left:0;right:0;top:0;align-items:center;gap:14px;padding:calc(10px + env(safe-area-inset-top)) 16px 10px;background:linear-gradient(180deg,rgba(0,0,0,.85),rgba(0,0,0,.55) 70%,transparent);color:#fff;font-family:var(--hud,system-ui)}
+#pauseTop b{font-size:26px;font-weight:700;text-transform:uppercase;letter-spacing:.08em;border-bottom:3px solid #c34dff;line-height:1.1}
+#pauseTop span{font-size:18px;font-weight:600;text-transform:uppercase;letter-spacing:.06em;opacity:.85}
+#pauseTop small{flex:1;font-size:14px;opacity:.7;text-align:right}
+#pmClose{width:42px;height:42px;padding:0;border-radius:6px;background:rgba(255,255,255,.12);color:#fff;border:0;font-size:18px}
+body.pausemap #legend{display:block;position:fixed;z-index:1500;right:16px;top:80px;width:220px;max-height:calc(100dvh - 110px);overflow-y:auto;background:rgba(8,9,10,.85);color:#fff;border-radius:6px;padding:10px 8px;font-family:var(--hud,system-ui);backdrop-filter:blur(4px)}
+.lg-head{font-size:18px;font-weight:700;text-transform:uppercase;letter-spacing:.08em;padding:0 6px 6px}
+.lg-sep{font-size:12px;text-transform:uppercase;letter-spacing:.1em;opacity:.6;padding:8px 6px 4px;border-top:1px solid #ffffff1a;margin-top:6px}
+.lg{display:flex;align-items:center;gap:10px;width:100%;background:none;border:0;color:#fff;padding:4px 6px;min-height:32px;border-radius:4px;font:600 15px/1.2 var(--hud,system-ui);text-align:left;cursor:pointer}
+.lg:hover:not(:disabled){background:#ffffff14}
+.lg:disabled{cursor:default;opacity:1}
+.lg.off{opacity:.38}
+.lg span:nth-child(2){flex:1}
+.lg em{font-style:normal;font-size:13px;opacity:.6}
+.lg-ic{width:24px;display:flex;justify-content:center;flex:none}
+.lg-line{display:block;width:22px;height:5px;border-radius:3px;background:#c34dff;box-shadow:0 0 6px #c34dff}
+.lg-arw{width:20px;height:20px}.lg-arw path{fill:#fff;stroke:#16181a;stroke-width:1.4}
+.lg-chowk{display:block;width:10px;height:10px;background:#f2a516;transform:rotate(45deg);border-radius:2px}
+.lg-dot{display:block;width:12px;height:12px;border-radius:50%;border:2px solid #fff}
+@media(max-width:760px){
+  body.pausemap #legend{top:auto;bottom:calc(10px + env(safe-area-inset-bottom));left:10px;right:10px;width:auto;max-height:34dvh;display:grid;grid-template-columns:1fr 1fr;gap:0 6px;align-content:start}
+  body.pausemap #legend .lg-head,body.pausemap #legend .lg-sep{grid-column:1/-1}
+  #legendList{display:contents}
+  #pauseTop small{display:none}#pauseTop span{flex:1}
+}
+body.pausemap .leaflet-top{top:70px}
