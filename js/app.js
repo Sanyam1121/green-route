@@ -20,7 +20,7 @@
     amritsar: { bbox: [31.59, 74.81, 31.68, 74.93], center: [31.634, 74.873] },
     phagwara: { bbox: [31.20, 75.74, 31.25, 75.80], center: [31.224, 75.770] },
   };
-  const opt = Object.assign({ vehicle: 'car', traffic: 'auto', lang: 'en', theme: 'auto', voice: true, likely: true, wait: 45, city: 'jalandhar', widths: false, chowks: true, look: 'game' }, store.get('gr-opt', {}));
+  const opt = Object.assign({ vehicle: 'car', traffic: 'auto', lang: 'en', theme: 'auto', voice: true, likely: true, wait: 45, city: 'jalandhar', widths: false, chowks: true, look: 'game', rotate: true, tilt: true }, store.get('gr-opt', {}));
   if (!CITIES[opt.city]) opt.city = 'jalandhar';
   const saveOpt = () => store.set('gr-opt', opt);
 
@@ -69,7 +69,7 @@
   function setBase() {
     if (baseLayer) map.removeLayer(baseLayer);
     baseLayer = gameOn()
-      ? L.maplibreGL({ style: 'styles/game.json?v=17', attribution: '&copy; <a href="https://openfreemap.org">OpenFreeMap</a> &copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>' })
+      ? L.maplibreGL({ style: 'styles/game.json?v=19', attribution: '&copy; <a href="https://openfreemap.org">OpenFreeMap</a> &copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>' })
       : L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 19, attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>' });
     baseLayer.addTo(map);
     document.body.classList.toggle('game', gameOn());
@@ -749,7 +749,7 @@
     toast(t('finding_you'));
     navigator.geolocation.getCurrentPosition(p => {
       const ll = L.latLng(p.coords.latitude, p.coords.longitude); lastFix = ll;
-      showMe(ll);
+      showMe(ll, p.coords.heading, p.coords.speed);
       // switch city automatically if the user is in another supported city
       const other = Object.keys(CITIES).find(k => { const b = CITIES[k].bbox; return ll.lat > b[0] && ll.lat < b[2] && ll.lng > b[1] && ll.lng < b[3]; });
       if (other && other !== opt.city) { switchCity(other).then(() => { if (asStart) setPoint('A', ll, t('my_location')); if (then) then(); }); return; }
@@ -758,9 +758,113 @@
       if (!nav) map.setView(ll, Math.max(map.getZoom(), 15));
     }, () => toast(t('geo_denied')), { enableHighAccuracy: true, timeout: 10000 });
   }
-  function showMe(ll, heading) {
-    meLayer.clearLayers();
-    L.marker(ll, { icon: L.divIcon({ className: '', html: `<div class="me"${heading != null ? ` style="--h:${heading}deg"` : ''}><i></i></div>`, iconSize: [26, 26], iconAnchor: [13, 13] }), interactive: false }).addTo(meLayer);
+  /* ---------------- live position: smooth movement, facing direction, rotating camera ---------------- */
+  // me.mode outside navigation: off | follow (north up) | compass (map turns with you) | free (tracking, not following)
+  const me = { target: null, disp: null, gpsHead: null, speed: 0, compass: null, head: null, mapRot: 0, mode: 'off' };
+  map.createPane('meP'); map.getPane('meP').style.zIndex = 660;
+  let meMarker = null, rafId = 0, lastFrame = 0, liveWatch = null, compassOn = false;
+  const angLerp = (a, b, k) => { if (a == null) return b; const d = ((b - a) % 360 + 540) % 360 - 180; return (a + d * k + 360) % 360; };
+  function showMe(ll, heading, speed) {
+    me.target = L.latLng(ll); if (!me.disp) me.disp = me.target;
+    if (heading != null && !isNaN(heading)) me.gpsHead = heading;
+    if (speed != null && !isNaN(speed)) me.speed = speed;
+    if (!meMarker) meMarker = L.marker(me.target, { icon: L.divIcon({ className: '', html: '<div class="me"><b class="cone"></b><i></i></div>', iconSize: [26, 26], iconAnchor: [13, 13] }), interactive: false, pane: 'meP' }).addTo(map);
+    startLoop();
+  }
+  function hideMe() { if (meMarker) { map.removeLayer(meMarker); meMarker = null; } me.target = me.disp = null; me.head = null; startLoop(); }
+  // phone compass: which way the person is looking
+  function onOri(e) {
+    let hd = null;
+    if (typeof e.webkitCompassHeading === 'number') hd = e.webkitCompassHeading;
+    else if (e.absolute && typeof e.alpha === 'number') hd = 360 - e.alpha;
+    if (hd == null) return;
+    const so = (screen.orientation && screen.orientation.angle) || window.orientation || 0;
+    me.compass = angLerp(me.compass, (hd + so + 720) % 360, 0.3);
+    startLoop();
+  }
+  async function startCompass() {
+    if (compassOn) return;
+    try { if (window.DeviceOrientationEvent && typeof DeviceOrientationEvent.requestPermission === 'function' && (await DeviceOrientationEvent.requestPermission()) !== 'granted') return; } catch (e) { return; }
+    addEventListener('deviceorientationabsolute', onOri, true); addEventListener('deviceorientation', onOri, true); compassOn = true;
+  }
+  // moving fast: GPS direction is steadier; standing or walking slowly: the compass shows where you face
+  function facing() {
+    if (me.speed > 2 && me.gpsHead != null) return me.gpsHead;
+    if (me.compass != null) return me.compass;
+    if (me.gpsHead != null) return me.gpsHead;
+    if (nav && nav.routeHead != null) return nav.routeHead;
+    return null;
+  }
+  const following = () => nav ? nav.follow : (me.mode === 'follow' || me.mode === 'compass');
+  const rotating = () => (nav ? nav.follow && opt.rotate : me.mode === 'compass') && me.head != null;
+  const tilting = () => !!nav && nav.follow && opt.tilt && !document.body.classList.contains('radar');
+  function startLoop() { if (!rafId) { lastFrame = performance.now(); rafId = requestAnimationFrame(frame); } }
+  function frame(now) {
+    rafId = 0;
+    const dt = Math.min(120, now - lastFrame); lastFrame = now;
+    let busy = false;
+    if (me.target) {
+      const k = 1 - Math.exp(-dt / 450);
+      const dLat = me.target.lat - me.disp.lat, dLng = me.target.lng - me.disp.lng;
+      me.disp = L.latLng(me.disp.lat + dLat * k, me.disp.lng + dLng * k);
+      busy = Math.abs(dLat) + Math.abs(dLng) > 2e-7;
+      const f = facing();
+      if (f != null) { const before = me.head; me.head = angLerp(me.head, f, 1 - Math.exp(-dt / 250)); busy = busy || before == null || Math.abs(((f - me.head) % 360 + 540) % 360 - 180) > 0.5; }
+      meMarker && meMarker.setLatLng(me.disp);
+    }
+    const want = rotating() ? me.head : 0;
+    const before = me.mapRot;
+    me.mapRot = angLerp(me.mapRot, want, 1 - Math.exp(-dt / 320));
+    if (Math.abs(((want - me.mapRot) % 360 + 540) % 360 - 180) > 0.3) busy = true; else me.mapRot = want;
+    applyCamera();
+    const el = meMarker && meMarker.getElement && meMarker.getElement(), d = el && el.querySelector('.me');
+    if (d) { d.style.setProperty('--h', (me.head || 0) + 'deg'); d.classList.toggle('dir', me.head != null); }
+    if (me.target && following()) map.setView(me.disp, map.getZoom(), { animate: false });
+    if (busy || (me.target && following() && rotating())) rafId = requestAnimationFrame(frame);
+  }
+  // heading-up rotation and 3D tilt: the map sits in an oversized square (#rot) that we turn with CSS
+  const rotEl = $('rot'), wrapEl = $('mapwrap');
+  let camState = '';
+  function applyCamera() {
+    const off0 = Math.min(Math.abs(me.mapRot), 360 - Math.abs(me.mapRot));
+    const on = off0 > 0.05 || rotating() || tilting();
+    const tilt = tilting();
+    const state = (on ? 'r' : '') + (tilt ? 't' : '') + (document.body.classList.contains('radar') ? 'R' : '');
+    if (state !== camState) {
+      camState = state;
+      document.body.classList.toggle('rotmap', on);
+      document.body.classList.toggle('tilted', tilt);
+      if (on) { const w = wrapEl.clientWidth, hh = wrapEl.clientHeight, dd = Math.ceil(Math.hypot(w, hh) * (tilt ? 2.1 : 1.05)); rotEl.style.width = rotEl.style.height = dd + 'px'; map.dragging.disable(); }
+      else { rotEl.style.width = rotEl.style.height = ''; map.dragging.enable(); }
+      map.invalidateSize({ pan: false });
+      if (me.disp && following()) map.setView(me.disp, map.getZoom(), { animate: false });
+    }
+    rotEl.style.setProperty('--rot', (-me.mapRot) + 'deg');
+    rotEl.style.setProperty('--tilt', tilt ? '40deg' : '0deg');
+  }
+  addEventListener('resize', () => { camState = ''; startLoop(); });
+  // touching the map while it follows/rotates hands control back to the user
+  wrapEl.addEventListener('pointerdown', e => {
+    if (e.target.closest('button,.leaflet-control,.leaflet-popup')) return;
+    if (nav && nav.follow) { nav.follow = false; $('navCenter').hidden = false; startLoop(); }
+    else if (!nav && (me.mode === 'follow' || me.mode === 'compass')) { me.mode = 'free'; drawMeBtn(); startLoop(); }
+  });
+  // ◎ button: off → follow me → compass → off
+  function startLive() {
+    if (liveWatch != null || !navigator.geolocation) return;
+    liveWatch = navigator.geolocation.watchPosition(p => {
+      if (nav) return;
+      lastFix = L.latLng(p.coords.latitude, p.coords.longitude);
+      showMe(lastFix, p.coords.heading, p.coords.speed);
+    }, () => { toast(t('geo_denied')); stopLive(); }, { enableHighAccuracy: true, maximumAge: 2000, timeout: 20000 });
+  }
+  function stopLive() { if (liveWatch != null) navigator.geolocation.clearWatch(liveWatch); liveWatch = null; me.mode = 'off'; if (!nav) hideMe(); drawMeBtn(); }
+  function drawMeBtn() { const b = $('me'); b.textContent = me.mode === 'compass' ? '🧭' : (me.mode === 'follow' ? '➤' : '◎'); b.classList.toggle('on', me.mode === 'follow' || me.mode === 'compass'); }
+  function cycleMe() {
+    if (me.mode === 'off' || me.mode === 'free') { me.mode = 'follow'; startLive(); startCompass(); toast(t('follow_on')); if (lastFix) map.setView(lastFix, Math.max(map.getZoom(), 16)); }
+    else if (me.mode === 'follow') { me.mode = 'compass'; startCompass(); toast(me.compass == null && me.gpsHead == null ? t('compass_wait') : t('compass_on')); }
+    else { stopLive(); toast(t('follow_off')); }
+    drawMeBtn(); startLoop();
   }
 
   /* ---------------- navigation ---------------- */
@@ -802,6 +906,8 @@
     const r = results[sel]; if (!r) return;
     nav = { mode: sel, follow: true, startShort: results.short, startCur: r, lastReroute: 0 };
     setNavRoute(r);
+    startCompass();
+    if (liveWatch != null) { navigator.geolocation.clearWatch(liveWatch); liveWatch = null; }
     document.body.classList.add('navigating');
     setRadar(false);
     recordTrip(r);
@@ -816,7 +922,7 @@
     try { wakeLock && wakeLock.release(); } catch (e) { } wakeLock = null;
     document.body.classList.remove('navigating');
     setRadar(false);
-    nav = null; meLayer.clearLayers();
+    nav = null; if (me.mode === 'off') hideMe(); else startLive(); startLoop();
     if (arrived) { toast(t('arrived')); drawSavings(); }
     if (A && B) go();
   }
@@ -825,8 +931,9 @@
     const la = p.coords.latitude, lo = p.coords.longitude, acc = p.coords.accuracy || 20;
     const ll = L.latLng(la, lo); lastFix = ll;
     const pr = Core.project(G, nav.r, la, lo, nav.k);
-    showMe(ll, p.coords.heading);
-    if (nav.follow) map.setView(ll, Math.max(map.getZoom(), 16), { animate: true });
+    { const rp = nav.r.path, k = Math.min(pr.k, rp.length - 2); nav.routeHead = (Core.bearing(G.lat[rp[k]], G.lon[rp[k]], G.lat[rp[k + 1]], G.lon[rp[k + 1]]) + 360) % 360; }
+    showMe(ll, p.coords.heading, p.coords.speed);
+    if (nav.follow && map.getZoom() < 16) map.setZoom(17, { animate: false });
     // off route → find a new route from here
     if (pr.off > 45 && acc < 60) nav.off++; else nav.off = 0;
     if ((nav.off >= 2 || pr.off > 90) && Date.now() - nav.lastReroute > 8000) {
@@ -869,7 +976,7 @@
     $('navLeft').textContent = `${Math.max(1, Math.round(secLeft / 60))} ${t('min')} · ${distText(left)} · ${t('lights_short', { n: lightsLeft })} · ${t('arrive_at', { t: eta })}`;
     $('navMute').textContent = opt.voice ? '🔊' : '🔇';
   }
-  map.on('dragstart', () => { if (nav) { nav.follow = false; $('navCenter').hidden = false; } });
+  map.on('dragstart', () => { if (nav) { nav.follow = false; $('navCenter').hidden = false; startLoop(); } });
   // test hook: drive along the current nav route
   window.GR = {
     simulate(speedKmh = 30, everyMs = 1000) {
@@ -998,6 +1105,7 @@
 
   /* ---------------- map taps ---------------- */
   map.on('click', e => {
+    if (document.body.classList.contains('rotmap')) return; // taps on a turned map land in the wrong place
     if (reportPick) { const ty = reportPick; reportPick = null; hint(''); postReport(ty, e.latlng.lat, e.latlng.lng); return; }
     if (editMode) { toggleSignal(e.latlng); return; }
     if (nav) return;
@@ -1036,7 +1144,7 @@
   }
 
   function setRadar(on) {
-    document.body.classList.toggle('radar', !!on);
+    document.body.classList.toggle('radar', !!on); camState = '';
     setTimeout(() => { map.invalidateSize(); if (nav && lastFix) map.setView(lastFix, on ? 17 : map.getZoom()); }, 60);
   }
   $('radarBtn').onclick = () => setRadar(!document.body.classList.contains('radar'));
@@ -1074,7 +1182,7 @@
     $('trWrap').hidden = !motor();
     $('trSel').options[0].textContent = t('auto_tr', { t: t('tr_' + autoTraffic()) }); $('trSel').value = opt.traffic;
     $('citySel').value = opt.city; $('langSel').value = opt.lang; $('themeSel').value = opt.theme; $('lookSel').value = opt.look;
-    $('widths').checked = opt.widths; $('chowksOn').checked = opt.chowks;
+    $('widths').checked = opt.widths; $('chowksOn').checked = opt.chowks; $('rotateOn').checked = opt.rotate; $('tiltOn').checked = opt.tilt;
     $('voice').checked = opt.voice; $('likely').checked = opt.likely; $('wait').value = opt.wait; $('wv').textContent = opt.wait + ' s';
   }
   $('vehSeg').onclick = e => { const b = e.target.closest('button'); if (!b) return; opt.vehicle = b.dataset.v; saveOpt(); drawOpts(); go(); };
@@ -1083,6 +1191,8 @@
   $('langSel').onchange = () => { opt.lang = $('langSel').value; saveOpt(); applyLang(); };
   $('themeSel').onchange = () => { opt.theme = $('themeSel').value; saveOpt(); applyTheme(); };
   $('lookSel').onchange = () => { opt.look = $('lookSel').value; saveOpt(); setBase(); applyTheme(); if (results.best) render(); drawChowks(); if (opt.look === 'game' && !gameOn()) toast(t('game_unsupported')); };
+  $('rotateOn').onchange = () => { opt.rotate = $('rotateOn').checked; saveOpt(); startLoop(); };
+  $('tiltOn').onchange = () => { opt.tilt = $('tiltOn').checked; saveOpt(); camState = ''; startLoop(); };
   $('chowksOn').onchange = () => { opt.chowks = $('chowksOn').checked; saveOpt(); drawChowks(); };
   $('widths').onchange = () => { opt.widths = $('widths').checked; saveOpt(); if (opt.widths && !(G && G.widths)) toast(t('widths_none')); if (opt.widths && map.getZoom() < 15) map.setZoom(15); drawWidths(); };
   $('voice').onchange = () => { opt.voice = $('voice').checked; saveOpt(); if (opt.voice) speak(t('v_test')); };
@@ -1096,12 +1206,12 @@
   $('area').onclick = () => { const b = map.getBounds(), s = [b.getSouth(), b.getWest(), b.getNorth(), b.getEast()]; if ((s[2] - s[0]) * (s[3] - s[1]) > 0.04) { toast(t('zoom_in_more')); return; } loadCity(opt.city, s); };
   $('handle').onclick = () => $('panel').classList.toggle('min');
   $('locA').onclick = () => locate(true);
-  $('me').onclick = () => locate(false);
+  $('me').onclick = cycleMe;
   $('repBtn').onclick = openReport;
   $('repCancel').onclick = () => { $('repSheet').hidden = true; };
   $('navStop').onclick = () => stopNav(false);
   $('navMute').onclick = () => { opt.voice = !opt.voice; saveOpt(); $('navMute').textContent = opt.voice ? '🔊' : '🔇'; };
-  $('navCenter').onclick = () => { if (nav) { nav.follow = true; $('navCenter').hidden = true; if (lastFix) map.setView(lastFix, 17); } };
+  $('navCenter').onclick = () => { if (nav) { nav.follow = true; $('navCenter').hidden = true; if (me.disp) map.setView(me.disp, 17); startLoop(); } };
   $('navReport').onclick = openReport;
   document.addEventListener('visibilitychange', async () => { if (nav && document.visibilityState === 'visible' && 'wakeLock' in navigator) try { wakeLock = await navigator.wakeLock.request('screen'); } catch (e) { } });
   setInterval(() => { if (G) loadReports(); }, 120000);

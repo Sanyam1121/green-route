@@ -1,6 +1,9 @@
 /* Green Route translations: English, Hindi, Punjabi. Values are strings with {vars} or functions of vars. */
 var I18N = (function () {
   const en = {
+    rotate_lbl: 'Turn the map with you', rotate_sub: 'While navigating, the direction you are going stays at the top, like a game radar.',
+    tilt_lbl: '3D tilt while navigating', tilt_sub: 'Tilts the map so you see the road ahead.',
+    follow_on: 'Following you. Tap again for compass mode.', compass_on: 'Compass mode: the map turns as you turn. Tap again to stop.', compass_wait: 'Compass mode: move the phone a little or start walking so it can find your direction.', follow_off: 'Location off',
     look_lbl: 'Map look', look_game: '🎮 Game (dark)', look_classic: '🗺️ Classic', game_unsupported: 'This phone can’t draw the game map, so the classic map is shown.',
     chowks_lbl: 'Show chowks', chowks_sub: 'Every major junction and roundabout, with its name where known. Tap one to route there or to name it.',
     ty_chowk: 'Chowk', roundabout: 'Roundabout chowk', unnamed_chowk: 'Chowk (name not known)', route_here: 'Route here', start_here: 'Start from here',
@@ -88,6 +91,9 @@ var I18N = (function () {
   };
 
   const hi = {
+    rotate_lbl: 'मैप आपके साथ घूमे', rotate_sub: 'नेविगेशन में आप जिस तरफ़ जा रहे हैं वह हमेशा ऊपर रहेगा, गेम रडार की तरह।',
+    tilt_lbl: 'नेविगेशन में 3D झुकाव', tilt_sub: 'मैप झुक जाता है ताकि आगे की सड़क दिखे।',
+    follow_on: 'आपके साथ चल रहा है। कम्पास मोड के लिए फिर टैप करें।', compass_on: 'कम्पास मोड: आप घूमेंगे तो मैप भी घूमेगा। बंद करने के लिए फिर टैप करें।', compass_wait: 'कम्पास मोड: दिशा पता करने के लिए फ़ोन थोड़ा हिलाएँ या चलना शुरू करें।', follow_off: 'लोकेशन बंद',
     look_lbl: 'मैप का रूप', look_game: '🎮 गेम (डार्क)', look_classic: '🗺️ सामान्य', game_unsupported: 'यह फ़ोन गेम मैप नहीं दिखा सकता, इसलिए सामान्य मैप दिख रहा है।',
     chowks_lbl: 'चौक दिखाएँ', chowks_sub: 'हर बड़ा चौराहा और गोल चक्कर, जहाँ पता है वहाँ नाम के साथ। रास्ते या नाम देने के लिए टैप करें।',
     ty_chowk: 'चौक', roundabout: 'गोल चक्कर चौक', unnamed_chowk: 'चौक (नाम पता नहीं)', route_here: 'यहाँ का रास्ता', start_here: 'यहाँ से शुरू करें',
@@ -175,6 +181,9 @@ var I18N = (function () {
   };
 
   const pa = {
+    rotate_lbl: 'ਨਕਸ਼ਾ ਤੁਹਾਡੇ ਨਾਲ ਘੁੰਮੇ', rotate_sub: 'ਚੱਲਦੇ ਸਮੇਂ ਤੁਸੀਂ ਜਿਸ ਪਾਸੇ ਜਾ ਰਹੇ ਹੋ ਉਹ ਹਮੇਸ਼ਾ ਉੱਪਰ ਰਹੇਗਾ, ਗੇਮ ਰਡਾਰ ਵਾਂਗ।',
+    tilt_lbl: 'ਚੱਲਦੇ ਸਮੇਂ 3D ਝੁਕਾਅ', tilt_sub: 'ਨਕਸ਼ਾ ਝੁਕ ਜਾਂਦਾ ਹੈ ਤਾਂ ਜੋ ਅੱਗੇ ਦੀ ਸੜਕ ਦਿਸੇ।',
+    follow_on: 'ਤੁਹਾਡੇ ਨਾਲ ਚੱਲ ਰਿਹਾ ਹੈ। ਕੰਪਾਸ ਮੋਡ ਲਈ ਫਿਰ ਟੈਪ ਕਰੋ।', compass_on: 'ਕੰਪਾਸ ਮੋਡ: ਤੁਸੀਂ ਘੁੰਮੋਗੇ ਤਾਂ ਨਕਸ਼ਾ ਵੀ ਘੁੰਮੇਗਾ। ਬੰਦ ਕਰਨ ਲਈ ਫਿਰ ਟੈਪ ਕਰੋ।', compass_wait: 'ਕੰਪਾਸ ਮੋਡ: ਦਿਸ਼ਾ ਲੱਭਣ ਲਈ ਫ਼ੋਨ ਥੋੜ੍ਹਾ ਹਿਲਾਓ ਜਾਂ ਤੁਰਨਾ ਸ਼ੁਰੂ ਕਰੋ।', follow_off: 'ਲੋਕੇਸ਼ਨ ਬੰਦ',
     look_lbl: 'ਨਕਸ਼ੇ ਦੀ ਦਿੱਖ', look_game: '🎮 ਗੇਮ (ਡਾਰਕ)', look_classic: '🗺️ ਆਮ', game_unsupported: 'ਇਹ ਫ਼ੋਨ ਗੇਮ ਨਕਸ਼ਾ ਨਹੀਂ ਵਿਖਾ ਸਕਦਾ, ਇਸ ਲਈ ਆਮ ਨਕਸ਼ਾ ਵਿਖ ਰਿਹਾ ਹੈ।',
     chowks_lbl: 'ਚੌਂਕ ਵਿਖਾਓ', chowks_sub: 'ਹਰ ਵੱਡਾ ਚੌਂਕ ਅਤੇ ਗੋਲ ਚੱਕਰ, ਜਿੱਥੇ ਪਤਾ ਹੈ ਉੱਥੇ ਨਾਂ ਨਾਲ। ਰਸਤੇ ਜਾਂ ਨਾਂ ਦੇਣ ਲਈ ਟੈਪ ਕਰੋ।',
     ty_chowk: 'ਚੌਂਕ', roundabout: 'ਗੋਲ ਚੱਕਰ ਚੌਂਕ', unnamed_chowk: 'ਚੌਂਕ (ਨਾਂ ਪਤਾ ਨਹੀਂ)', route_here: 'ਇੱਥੇ ਦਾ ਰਸਤਾ', start_here: 'ਇੱਥੋਂ ਸ਼ੁਰੂ ਕਰੋ',
