@@ -11,8 +11,8 @@
 <link rel="apple-touch-icon" href="icons/icon-192.png">
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
 <link rel="stylesheet" href="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.css">
-<link href="https://fonts.googleapis.com/css2?family=Hanken+Grotesk:wght@400;600;800&family=Noto+Sans+Devanagari:wght@400;600;800&family=Noto+Sans+Gurmukhi:wght@400;600;800&family=Rajdhani:wght@600;700&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="css/style.css?v=21">
+<link href="https://fonts.googleapis.com/css2?family=Hanken+Grotesk:wght@400;600;800&family=Noto+Sans+Devanagari:wght@400;600;800&family=Noto+Sans+Gurmukhi:wght@400;600;800&family=Rajdhani:wght@600;700&family=Barlow+Condensed:wght@500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="css/style.css?v=22">
 </head>
 <body>
 <div id="app">
@@ -84,6 +84,7 @@
 </aside>
 <div id="mapwrap">
   <div id="rot"><div id="map"></div></div>
+  <div id="northBlip" hidden>N</div>
   <div class="hint" id="hint" hidden></div>
   <button class="fab" id="me" aria-label="Show my location" title="My location">◎</button>
   <button class="fab rep-fab" id="repBtn" aria-label="Report" title="Report">⚠️</button>
@@ -91,6 +92,7 @@
 </div>
 </div>
 
+<div id="hudBars" aria-hidden="true"><b><i id="barProg"></i></b><b><i id="barSpd"></i></b></div>
 <div id="navTop" class="navui">
   <div class="arrow" id="navArrow">↑</div>
   <div class="ntext"><div class="ndist" id="navDist"></div><div id="navText"></div><small id="navThen"></small></div>
@@ -119,8 +121,8 @@
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 <script src="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.js"></script>
 <script src="https://unpkg.com/@maplibre/maplibre-gl-leaflet@0.0.22/leaflet-maplibre-gl.js"></script>
-<script src="js/i18n.js?v=21"></script>
-<script src="js/core.js?v=21"></script>
-<script src="js/app.js?v=21"></script>
+<script src="js/i18n.js?v=22"></script>
+<script src="js/core.js?v=22"></script>
+<script src="js/app.js?v=22"></script>
 </body>
 </html>

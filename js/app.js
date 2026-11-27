@@ -69,8 +69,9 @@
   function setBase() {
     if (baseLayer) map.removeLayer(baseLayer);
     baseLayer = gameOn()
-      ? L.maplibreGL({ style: 'styles/game.json?v=21', attribution: '&copy; <a href="https://openfreemap.org">OpenFreeMap</a> &copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>' })
+      ? L.maplibreGL({ style: 'styles/game.json?v=22', updateInterval: 0, attribution: '&copy; <a href="https://openfreemap.org">OpenFreeMap</a> &copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>' })
       : L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 19, attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>' });
+    if (baseLayer._roundPoint) baseLayer._roundPoint = p => p; // sub-pixel placement keeps the basemap glued to the route line
     baseLayer.addTo(map);
     document.body.classList.toggle('game', gameOn());
   }
@@ -765,13 +766,16 @@
   let meMarker = null, rafId = 0, lastFrame = 0, liveWatch = null, compassOn = false;
   const angLerp = (a, b, k) => { if (a == null) return b; const d = ((b - a) % 360 + 540) % 360 - 180; return (a + d * k + 360) % 360; };
   function showMe(ll, heading, speed) {
+    const t = performance.now();
     me.target = L.latLng(ll); if (!me.disp) me.disp = me.target;
+    // glide at a steady speed from where the arrow is now to the new fix, over about one fix interval
+    me.from = me.disp; me.t0 = t; me.dur = me.lastFixT ? Math.max(250, Math.min(1500, t - me.lastFixT)) : 1; me.lastFixT = t;
     if (heading != null && !isNaN(heading)) me.gpsHead = heading;
     if (speed != null && !isNaN(speed)) me.speed = speed;
-    if (!meMarker) meMarker = L.marker(me.target, { icon: L.divIcon({ className: '', html: '<div class="me"><b class="cone"></b><i></i></div>', iconSize: [26, 26], iconAnchor: [13, 13] }), interactive: false, pane: 'meP' }).addTo(map);
+    if (!meMarker) meMarker = L.marker(me.target, { icon: L.divIcon({ className: '', html: '<div class="me"><b class="cone"></b><i></i><svg class="arw" viewBox="0 0 24 24"><path d="M12 2.5 19.5 21 12 16.6 4.5 21z"/></svg></div>', iconSize: [26, 26], iconAnchor: [13, 13] }), interactive: false, pane: 'meP' }).addTo(map);
     startLoop();
   }
-  function hideMe() { if (meMarker) { map.removeLayer(meMarker); meMarker = null; } me.target = me.disp = null; me.head = null; startLoop(); }
+  function hideMe() { if (meMarker) { map.removeLayer(meMarker); meMarker = null; } me.target = me.disp = me.from = null; me.head = null; me.lastFixT = 0; startLoop(); }
   // phone compass: which way the person is looking
   function onOri(e) {
     let hd = null;
@@ -801,8 +805,27 @@
   // which way the MAP should face. Navigating: the road's direction (steady), or GPS direction when moving fast.
   // The shaky phone compass is only used for the map in compass mode; the beam on your dot always uses it.
   function mapTarget() {
-    if (nav) { if (me.speed > 3 && me.gpsHead != null) return me.gpsHead; if (nav.routeHead != null) return nav.routeHead; return me.head; }
+    if (nav) { if (nav.snap && nav.lookHead != null) return nav.lookHead; if (me.speed > 3 && me.gpsHead != null) return me.gpsHead; if (nav.routeHead != null) return nav.routeHead; return me.head; }
     return me.head;
+  }
+  // a point a given distance along the route, and the road's direction there
+  function routePoint(r, a) {
+    const cum = r.cum, n = r.path.length; a = Math.max(0, Math.min(cum[n - 1], a));
+    let lo = 0, hi = n - 1; while (hi - lo > 1) { const m = (lo + hi) >> 1; if (cum[m] <= a) lo = m; else hi = m; }
+    const i = r.path[lo], j = r.path[hi], f = cum[hi] > cum[lo] ? (a - cum[lo]) / (cum[hi] - cum[lo]) : 0;
+    return [G.lat[i] + (G.lat[j] - G.lat[i]) * f, G.lon[i] + (G.lon[j] - G.lon[i]) * f];
+  }
+  const routeBearing = (r, a, b) => { const p = routePoint(r, a), q = routePoint(r, b); return (Core.bearing(p[0], p[1], q[0], q[1]) + 360) % 360; };
+  // camera pan by a sub-pixel amount without the full Leaflet "moveend" redraw every frame
+  let panAcc = 0, moveEndT = 0;
+  function syncGL() { const b = baseLayer; if (b && b._glMap && b._update) try { b._update(); b._glMap.redraw(); } catch (e) { } }
+  function camPan(dx, dy) {
+    if (!dx && !dy) return;
+    map._rawPanBy(L.point(dx, dy)); map.fire('move'); syncGL();
+    panAcc += Math.abs(dx) + Math.abs(dy); clearTimeout(moveEndT);
+    const s = map.getSize();
+    if (panAcc > Math.min(s.x, s.y) * 0.06) { panAcc = 0; map.fire('moveend'); }
+    else moveEndT = setTimeout(() => { panAcc = 0; map.fire('moveend'); }, 250);
   }
   const angDist = (a, b) => Math.abs(((b - a) % 360 + 540) % 360 - 180);
   function startLoop() { if (!rafId) { lastFrame = performance.now(); rafId = requestAnimationFrame(frame); } }
@@ -810,30 +833,49 @@
     rafId = 0;
     const dt = Math.min(120, now - lastFrame); lastFrame = now;
     let busy = false;
-    if (me.target) {
-      const k = 1 - Math.exp(-dt / 450);
-      const dLat = me.target.lat - me.disp.lat, dLng = me.target.lng - me.disp.lng;
-      me.disp = L.latLng(me.disp.lat + dLat * k, me.disp.lng + dLng * k);
-      busy = Math.abs(dLat) + Math.abs(dLng) > 2e-7;
+    if (nav && nav.snap && nav.aFix != null) {
+      // navigating on the route: slide along the road at a steady speed, predicting between GPS fixes
+      const r = nav.r, since = Math.min(1.5, (now - nav.tFix) / 1000);
+      const goal = Math.min(r.len, nav.aFix + (nav.v || 0) * since), err = goal - nav.aShown;
+      if (nav.aShown == null || err < -25 || err > 150) nav.aShown = goal;
+      else if (err > 0) nav.aShown += err * (1 - Math.exp(-dt / 300));
+      const a = nav.aShown, p = routePoint(r, a);
+      me.disp = me.target = L.latLng(p[0], p[1]); me.from = null;
+      nav.lookHead = routeBearing(r, a, a + 45);
+      me.head = angLerp(me.head, routeBearing(r, a - 6, a + 8), 1 - Math.exp(-dt / 160));
+      busy = (nav.v || 0) > 0.3 || Math.abs(err) > 0.3;
+    } else if (me.target) {
+      if (me.from) {
+        const f = Math.min(1, (now - me.t0) / me.dur);
+        me.disp = L.latLng(me.from.lat + (me.target.lat - me.from.lat) * f, me.from.lng + (me.target.lng - me.from.lng) * f);
+        if (f >= 1) me.from = null; else busy = true;
+      } else me.disp = me.target;
       const f = facing();
-      if (f != null) { const before = me.head; me.head = angLerp(me.head, f, 1 - Math.exp(-dt / 250)); busy = busy || before == null || Math.abs(((f - me.head) % 360 + 540) % 360 - 180) > 0.5; }
-      meMarker && meMarker.setLatLng(me.disp);
+      if (f != null) { const before = me.head; me.head = angLerp(me.head, f, 1 - Math.exp(-dt / 250)); busy = busy || before == null || angDist(f, me.head) > 0.5; }
     }
-    // rotating: follow the target, ignoring small wobbles. Not rotating: navigating or looking around keeps the current angle
-    // (no spinning while you drag); plain follow mode outside navigation turns back to north.
-    let want = me.mapRot;
-    if (rotating()) { const tg = mapTarget(); if (tg != null) { if (me.rotGoal == null || angDist(me.rotGoal, tg) > (nav ? 4 : 8)) me.rotGoal = tg; want = me.rotGoal; } }
+    // rotating: follow the target. Route lookahead is already smooth; GPS/compass get a small dead zone against wobble.
+    let want = me.mapRot, tau = 600;
+    if (rotating()) {
+      const tg = mapTarget();
+      if (tg != null) {
+        if (nav && nav.snap) { me.rotGoal = tg; tau = 450; }
+        else if (me.rotGoal == null || angDist(me.rotGoal, tg) > (nav ? 4 : 8)) me.rotGoal = tg;
+        want = me.rotGoal;
+      }
+    }
     else if (!nav && (me.mode !== 'free' || pointers.size === 0)) { want = 0; me.rotGoal = null; }
     else me.rotGoal = null;
-    me.mapRot = angLerp(me.mapRot, want, 1 - Math.exp(-dt / 600));
-    if (angDist(want, me.mapRot) > 0.2) busy = true; else me.mapRot = want;
-    applyCamera();
-    const el = meMarker && meMarker.getElement && meMarker.getElement(), d = el && el.querySelector('.me');
-    if (d) { d.style.setProperty('--h', (me.head || 0) + 'deg'); d.classList.toggle('dir', me.head != null); }
-    if (me.target && following() && !zoomingNow && pointers.size < 2) {
-      const c = map.latLngToContainerPoint(me.disp), s = map.getSize();
-      if (Math.abs(c.x - s.x / 2) > 0.5 || Math.abs(c.y - s.y / 2) > 0.5) map.setView(me.disp, map.getZoom(), { animate: false });
+    me.mapRot = angLerp(me.mapRot, want, 1 - Math.exp(-dt / tau));
+    if (angDist(want, me.mapRot) > 0.05) busy = true; else me.mapRot = want;
+    if (me.disp && following() && !zoomingNow && pointers.size < 2) {
+      const c = map.latLngToContainerPoint(me.disp), s = map.getSize(), dx = c.x - s.x / 2, dy = c.y - s.y / 2;
+      if (Math.abs(dx) + Math.abs(dy) > s.x) map.setView(me.disp, map.getZoom(), { animate: false });
+      else if (Math.abs(dx) > 0.02 || Math.abs(dy) > 0.02) camPan(dx, dy);
     }
+    if (meMarker) { meMarker._latlng = me.disp; if (meMarker._icon && !zoomingNow) L.DomUtil.setPosition(meMarker._icon, map.latLngToLayerPoint(me.disp)); }
+    if (applyCamera(dt)) busy = true;
+    const el = meMarker && meMarker._icon, d = el && el.querySelector('.me');
+    if (d) { d.style.setProperty('--h', (me.head || 0) + 'deg'); d.classList.toggle('dir', me.head != null); }
     if (busy || (me.target && following() && rotating())) rafId = requestAnimationFrame(frame);
   }
   // zoom state: the camera waits while Leaflet animates a zoom or the user pinches
@@ -851,7 +893,9 @@
   let camState = '';
   // The turned/tilted mode is switched on ONCE (start of navigation or compass mode) and kept until it ends,
   // so the map is never resized in the middle of a zoom or a drag. Tilt fades in and out with CSS.
-  function applyCamera() {
+  const cam = { tilt: 0, scale: 1, labelRot: null, h: 0 };
+  const northEl = $('northBlip');
+  function applyCamera(dt = 16) {
     const off0 = Math.min(Math.abs(me.mapRot), 360 - Math.abs(me.mapRot));
     const on = !!nav || me.mode === 'compass' || off0 > 0.2;
     const tilt = tilting();
@@ -866,9 +910,38 @@
       else { rotEl.style.width = rotEl.style.height = ''; map.dragging.enable(); }
       map.invalidateSize({ animate: false }); // keeps the same centre
       if (me.disp && following()) map.setView(me.disp, map.getZoom(), { animate: false });
+      cam.h = wrapEl.clientHeight;
     }
-    rotEl.style.setProperty('--rot', (-me.mapRot) + 'deg');
-    rotEl.style.setProperty('--tilt', tilt ? '40deg' : '0deg');
+    // everything eases in JS and is written as one transform, so nothing inside the map has to restyle per frame
+    const kT = 1 - Math.exp(-dt / 280), kS = 1 - Math.exp(-dt / 1200);
+    const tiltGoal = tilt ? 40 : 0;
+    const kmh = nav ? (nav.v || me.speed || 0) * 3.6 : 0;
+    const scaleGoal = nav && nav.follow && !radar ? 1 - 0.1 * Math.min(1, Math.max(0, (kmh - 15) / 35)) : 1; // zoom out a little when moving fast
+    cam.tilt += (tiltGoal - cam.tilt) * kT; if (Math.abs(tiltGoal - cam.tilt) < 0.05) cam.tilt = tiltGoal;
+    cam.scale += (scaleGoal - cam.scale) * kS; if (Math.abs(scaleGoal - cam.scale) < 0.0005) cam.scale = scaleGoal;
+    if (on) {
+      const shift = (cam.tilt / 40) * 0.18 * (cam.h || wrapEl.clientHeight);
+      rotEl.style.transform = `translate(-50%,calc(-50% + ${shift.toFixed(2)}px)) perspective(1200px) rotateX(${cam.tilt.toFixed(2)}deg) rotateZ(${(-me.mapRot).toFixed(2)}deg) scale(${cam.scale.toFixed(4)})`;
+    } else rotEl.style.transform = '';
+    // labels stay upright: updated in small steps (cheap) and exactly once the turn settles
+    const settled = angDist(me.rotGoal == null ? me.mapRot : me.rotGoal, me.mapRot) < 0.1;
+    if (cam.labelRot == null || angDist(cam.labelRot, me.mapRot) > 1.5 || (settled && cam.labelRot !== me.mapRot)) { cam.labelRot = me.mapRot; rotEl.style.setProperty('--rot', (-me.mapRot).toFixed(1) + 'deg'); }
+    drawNorth(on, cam.tilt);
+    return cam.tilt !== tiltGoal || cam.scale !== scaleGoal;
+  }
+  // north blip on the screen edge, like a game radar
+  function drawNorth(on, tilt) {
+    if (!northEl) return;
+    const show = on && (!!nav || me.mode === 'compass');
+    northEl.hidden = !show; if (!show) return;
+    // on an oval inside the screen (clear of the corner buttons and the top/bottom cards), in north's direction
+    const W = wrapEl.clientWidth, H = wrapEl.clientHeight, small = document.body.classList.contains('radar');
+    const rx = W / 2 - (small ? 16 : 34), ry = H / 2 - (small ? 16 : 120);
+    const a = me.mapRot * Math.PI / 180;
+    let vx = -Math.sin(a), vy = -Math.cos(a) * Math.cos(tilt * Math.PI / 180);
+    const ln = Math.hypot(vx / rx, vy / ry) || 1;
+    const nx = W / 2 + vx / ln, ny = H / 2 + vy / ln;
+    northEl.style.transform = `translate(${(nx - 11).toFixed(1)}px,${(ny - 11).toFixed(1)}px)`;
   }
   addEventListener('resize', () => { camState = ''; startLoop(); });
   // touching the map while it follows/rotates hands control back to the user
@@ -888,7 +961,7 @@
     if (!document.body.classList.contains('rotmap')) return; // normal map: Leaflet drags it
     const dx = e.clientX - pt.lx, dy = e.clientY - pt.ly; pt.lx = e.clientX; pt.ly = e.clientY;
     const a = me.mapRot * Math.PI / 180, mx = dx * Math.cos(a) - dy * Math.sin(a), my = dx * Math.sin(a) + dy * Math.cos(a);
-    map.panBy([-mx, -my], { animate: false });
+    camPan(-mx, -my);
   });
   const pointerUp = e => { pointers.delete(e.pointerId); if (!pointers.size) startLoop(); };
   wrapEl.addEventListener('pointerup', pointerUp); wrapEl.addEventListener('pointercancel', pointerUp); wrapEl.addEventListener('pointerleave', pointerUp);
@@ -938,6 +1011,7 @@
   }
   function setNavRoute(r) {
     nav.r = r; nav.steps = Core.steps(G, r); nav.ev = navEvents(r); nav.k = 0; nav.off = 0;
+    nav.aFix = nav.aShown = null; nav.snap = false;
     for (const st of nav.steps) if (st.type !== 'arrive') { const c = chowkAt(G.lat[r.path[st.k]], G.lon[r.path[st.k]], 70); if (c) st.chowk = c.n; }
     nav.said = new Set();
     routeLayer.clearLayers();
@@ -981,6 +1055,13 @@
     const pr = Core.project(G, nav.r, la, lo, nav.k);
     { const rp = nav.r.path, k = Math.min(pr.k, rp.length - 2); nav.routeHead = (Core.bearing(G.lat[rp[k]], G.lon[rp[k]], G.lat[rp[k + 1]], G.lon[rp[k + 1]]) + 360) % 360; }
     showMe(ll, p.coords.heading, p.coords.speed);
+    // on the route: the arrow is drawn ON the road and glides along it at the measured speed
+    { const tN = performance.now(), gs = p.coords.speed;
+      if (pr.off < 30) {
+        if (nav.aFix != null && nav.snap) { const dtf = (tN - nav.tFix) / 1000; if (dtf > 0.15) { const vm = Math.max(0, (pr.along - nav.aFix) / dtf), v = gs != null && !isNaN(gs) && gs > 0 ? gs : vm; nav.v = nav.v == null ? v : nav.v * 0.4 + Math.min(40, v) * 0.6; } }
+        else if (nav.aShown == null) nav.aShown = pr.along;
+        nav.aFix = pr.along; nav.tFix = tN; nav.snap = true;
+      } else { nav.snap = false; nav.v = 0; } }
     if (nav.follow && map.getZoom() < 16) map.setZoom(17, { animate: false });
     // off route → find a new route from here
     if (pr.off > 45 && acc < 60) nav.off++; else nav.off = 0;
@@ -1023,6 +1104,8 @@
     const eta = new Date(Date.now() + secLeft * 1000).toLocaleTimeString(I18N.locale(), { hour: 'numeric', minute: '2-digit' });
     $('navLeft').textContent = `${Math.max(1, Math.round(secLeft / 60))} ${t('min')} · ${distText(left)} · ${t('lights_short', { n: lightsLeft })} · ${t('arrive_at', { t: eta })}`;
     $('navMute').textContent = opt.voice ? '🔊' : '🔇';
+    $('barProg').style.width = (100 * Math.min(1, along / Math.max(1, nav.r.len))).toFixed(1) + '%';
+    $('barSpd').style.width = Math.min(100, (nav.v || me.speed || 0) * 3.6 / 60 * 100).toFixed(1) + '%';
   }
   map.on('dragstart', () => { if (nav) { nav.follow = false; $('navCenter').hidden = false; startLoop(); } });
   // test hook: drive along the current nav route
