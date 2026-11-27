@@ -70,7 +70,7 @@
   function setBase() {
     if (baseLayer) map.removeLayer(baseLayer);
     baseLayer = gameOn()
-      ? L.maplibreGL({ style: 'styles/game.json?v=28', updateInterval: 0, attribution: '&copy; <a href="https://openfreemap.org">OpenFreeMap</a> &copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>' })
+      ? L.maplibreGL({ style: 'styles/game.json?v=29', updateInterval: 0, attribution: '&copy; <a href="https://openfreemap.org">OpenFreeMap</a> &copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>' })
       : L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 19, attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>' });
     if (baseLayer._roundPoint) baseLayer._roundPoint = p => p; // sub-pixel placement keeps the basemap glued to the route line
     baseLayer.addTo(map);
@@ -294,7 +294,7 @@
     updateHash(); saveRecent();
     render();
     const bnd = L.latLngBounds([[A.lat, A.lng], [B.lat, B.lng]]);
-    if (isPhone() || !map.getBounds().pad(-0.1).contains(bnd)) map.fitBounds(bnd, { padding: isPhone() ? [40, 40] : [60, 60], paddingBottomRight: isPhone() ? [30, Math.round($('panel').offsetHeight + 30)] : [60, 60] });
+    if (!paused() && (isPhone() || !map.getBounds().pad(-0.1).contains(bnd))) map.fitBounds(bnd, { padding: isPhone() ? [40, 40] : [60, 60], paddingBottomRight: isPhone() ? [30, Math.round($('panel').offsetHeight + 30)] : [60, 60] });
   }
   // nearby road points for a pin, with the cost of getting from the pin to each (metres for 'short', seconds otherwise)
   function ends(P, mask, mode) {
@@ -1302,10 +1302,12 @@
       const pt = map.latLngToLayerPoint([p.la, p.lo]), key = Math.floor(pt.x / cell) + ',' + Math.floor(pt.y / cell);
       if (used.has(key)) continue; used.add(key); per[p.ty] = (per[p.ty] || 0) + 1;
       const m = L.marker([p.la, p.lo], { icon: L.divIcon({ className: '', html: blipHtml(p.ty), iconSize: [22, 22], iconAnchor: [11, 11] }), pane: 'blips', keyboard: false, title: p.n }).addTo(blipLayer);
-      m.on('click', e => { L.DomEvent.stop(e); placePopup(p.n, t('ty_' + p.ty), [p.la, p.lo]); });
+      m._grPlace = p;
+      m.on('click', e => { L.DomEvent.stop(e); if (paused()) map.panTo([p.la, p.lo], { animate: true, duration: 0.35 }); else placePopup(p.n, t('ty_' + p.ty), [p.la, p.lo]); });
       if (++n >= 90) break;
     }
-    if (pm) drawLegend();
+    pmHot = null;
+    if (pm) { drawLegend(); pmSchedule(); }
   }
   function placePopup(name, sub, ll) {
     const div = document.createElement('div'); div.className = 'pop';
@@ -1324,14 +1326,15 @@
     pauseWasFollow = !!(nav && nav.follow); if (nav) nav.follow = false;
     if (me.mode === 'follow' || me.mode === 'compass') { me.mode = 'free'; drawMeBtn(); }
     me.mapRot = 0; me.rotGoal = null; camState = '';
-    document.body.classList.add('pausemap');
+    document.body.classList.add('pausemap'); document.body.classList.remove('lgopen');
+    Object.assign(map.options, { zoomSnap: 0.25, zoomDelta: 0.5, wheelPxPerZoomLevel: 110 });
     const cs = $('citySel'); $('pmCity').textContent = cs && cs.selectedOptions[0] ? cs.selectedOptions[0].textContent : '';
     setTimeout(() => {
       map.invalidateSize({ animate: false });
       const r = nav ? nav.r : results && results[sel];
       if (r && r.path && r.path.length > 1) map.fitBounds(L.latLngBounds(r.path.map(i => [G.lat[i], G.lon[i]])), { paddingTopLeft: [50, 80], paddingBottomRight: [innerWidth > 760 ? 260 : 50, innerWidth > 760 ? 50 : 240], animate: false });
       else map.setZoom(Math.max(13, map.getZoom() - 1), { animate: false });
-      drawBlips(); drawLegend();
+      drawBlips(); drawLegend(); pmShowTrip(); pmUpdate();
     }, 40);
     startLoop();
   }
@@ -1339,9 +1342,12 @@
     if (!paused()) return;
     map.closePopup();
     document.body.classList.remove('pausemap'); camState = '';
+    Object.assign(map.options, { zoomSnap: 1, zoomDelta: 1, wheelPxPerZoomLevel: 60 });
+    if (pmHot) { pmHot.classList.remove('hot'); pmHot = null; }
     setTimeout(() => {
       map.invalidateSize({ animate: false });
       if (nav && pauseWasFollow) { nav.follow = true; $('navCenter').hidden = true; if (me.disp) map.setView(me.disp, 17, { animate: false }); }
+      else if (Math.round(map.getZoom()) !== map.getZoom()) map.setZoom(Math.round(map.getZoom()), { animate: false });
       else if (nav) $('navCenter').hidden = false;
       drawBlips(); startLoop();
     }, 40);
@@ -1692,6 +1698,108 @@
     for (const s of nav.sigMarks || []) if (s.on && s.at < a - 15) { routeLayer.removeLayer(s.m); s.on = false; }
   }
 
+  /* ---------------- pause map v2: crosshair, place under the cursor, waypoint on the map, Quick GPS ---------------- */
+  const pmCross = $('pmCross');
+  let pmRaf = 0, pmHot = null, pmGeoT = 0, pmLastGeo = 0, pmTrip = false;
+  const geoCache = new Map();
+  const fmtDist = m => m < 1000 ? Math.round(m / 10) * 10 + ' m' : (m / 1000).toFixed(m < 10000 ? 1 : 0) + ' km';
+  function pmSchedule() { if (paused() && !pmRaf) pmRaf = requestAnimationFrame(() => { pmRaf = 0; pmUpdate(); }); }
+  map.on('move zoom', pmSchedule);
+  // what is under the crosshair: an icon, a chowk, or the street/area
+  function pmUpdate() {
+    if (!paused()) return;
+    const c = map.getCenter(), cp = map.latLngToContainerPoint(c);
+    let hot = null, hd = 24;
+    blipLayer.eachLayer(m => { const d = map.latLngToContainerPoint(m.getLatLng()).distanceTo(cp); if (d < hd) { hd = d; hot = m; } });
+    const hotEl = hot && hot._icon && hot._icon.querySelector('.blip');
+    if (pmHot !== hotEl) { if (pmHot) pmHot.classList.remove('hot'); if (hotEl) hotEl.classList.add('hot'); pmHot = hotEl; }
+    const mpp = 40075016 * Math.cos(c.lat * Math.PI / 180) / Math.pow(2, map.getZoom() + 8);
+    const ch = !hot && chowkAt(c.lat, c.lng, Math.max(25, mpp * 22));
+    const from = lastFix || me.disp || A;
+    const away = from ? ' · ' + t('pm_away', { d: fmtDist(Core.hav(from.lat, from.lng, c.lat, c.lng)) }) : '';
+    let icon = '', name, sub;
+    if (hot) { const p = hot._grPlace; icon = blipHtml(p.ty); name = p.n; sub = t('ty_' + p.ty); pmCross.dataset.name = p.n; }
+    else if (ch) { icon = '<i class="lg-chowk"></i>'; name = ch.n; sub = t('lg_chowk'); pmCross.dataset.name = ch.n; }
+    else {
+      const k = c.lat.toFixed(4) + ',' + c.lng.toFixed(4), g = geoCache.get(k);
+      if (g) { name = g.name; sub = g.sub; }
+      else { name = offlineName(c); sub = ''; clearTimeout(pmGeoT); pmGeoT = setTimeout(() => reverseGeo(c, k), 500); }
+      pmCross.dataset.name = name;
+    }
+    $('pmIcon').innerHTML = icon; $('pmName').textContent = name; $('pmSub').textContent = (sub || '') + away;
+    $('pmIcon').hidden = !icon;
+  }
+  function offlineName(c) {
+    const n = nearestName(c); if (n !== t('waypoint')) return n;
+    let best = null, bd = 400;
+    for (const p of PL) { if (p.ty !== 'road' && p.ty !== 'area') continue; const d = Core.hav(p.la, p.lo, c.lat, c.lng); if (d < bd) { bd = d; best = p; } }
+    return best ? best.n : t('waypoint');
+  }
+  // street + area name from OpenStreetMap (at most about once a second, only when the cursor rests)
+  async function reverseGeo(c, k) {
+    if (!navigator.onLine || !paused()) return;
+    const wait = 1100 - (Date.now() - pmLastGeo); if (wait > 0) { clearTimeout(pmGeoT); pmGeoT = setTimeout(() => reverseGeo(c, k), wait); return; }
+    pmLastGeo = Date.now();
+    try {
+      const r = await fetch(`https://nominatim.openstreetmap.org/reverse?format=jsonv2&zoom=17&accept-language=${opt.lang === 'en' ? 'en' : opt.lang + ',en'}&lat=${c.lat.toFixed(5)}&lon=${c.lng.toFixed(5)}`);
+      const j = await r.json(), a = j.address || {};
+      const name = a.road || a.pedestrian || a.amenity || a.neighbourhood || a.suburb || (j.name) || offlineName(c);
+      const sub = [a.neighbourhood || a.suburb, a.city_district].filter((x, i, arr) => x && x !== name && arr.indexOf(x) === i).join(', ');
+      geoCache.set(k, { name, sub }); if (geoCache.size > 300) geoCache.delete(geoCache.keys().next().value);
+      const now = map.getCenter(); if (now.lat.toFixed(4) + ',' + now.lng.toFixed(4) === k) pmUpdate();
+    } catch (e) { }
+  }
+  // set the waypoint at the crosshair; the purple route appears right here on the big map
+  function waypointHere(ll, name) {
+    if (!G) return;
+    if (nav) {
+      setPoint('B', ll, name, true);
+      const here = lastFix || me.disp, mask = Core.usable(G, routeOpts(nav.mode));
+      const r = here && Core.route(G, Z, ends(here, mask, nav.mode), ends(B, mask, nav.mode), routeOpts(nav.mode));
+      if (r) { results[nav.mode] = r; results._dst = r.path[r.path.length - 1]; setNavRoute(r); pauseWasFollow = true; speak(t('v_reroute')); }
+      pmShowTrip(); return;
+    }
+    if (!A) {
+      if (lastFix) setPoint('A', lastFix, t('my_location'), true);
+      else { locate(true, () => { setPoint('B', ll, name); pmShowTrip(); }); return; }
+    }
+    setPoint('B', ll, name);
+    pmShowTrip();
+  }
+  function pmShowTrip() {
+    const r = nav ? nav.r : results[sel];
+    pmTrip = !!(r && B);
+    $('pmClear').hidden = !pmTrip;
+    $('pmTrip').hidden = !pmTrip;
+    if (pmTrip) $('pmTrip').innerHTML = `<b>📍 ${esc($('qB').value || t('waypoint'))}</b><span>${km(r)} km · ${mins(r)} ${esc(t('min'))} · ${esc(t('lights', { n: r.signals.length }))}</span>`;
+  }
+  function clearWaypoint() {
+    if (nav) stopNav();
+    if (mB) { map.removeLayer(mB); mB = null; } B = null; $('qB').value = '';
+    go(); pmShowTrip();
+  }
+  // Quick GPS: nearest petrol / police / hospital / ATM by driving time, not straight-line distance
+  function quickGPS(ty) {
+    if (!G || !PL.length) return;
+    const from = lastFix || me.disp || A || map.getCenter();
+    const cand = PL.filter(p => p.ty === ty).map(p => ({ p, d: Core.hav(from.lat, from.lng, p.la, p.lo) })).sort((a, b) => a.d - b.d).slice(0, 25);
+    if (!cand.length) { toast(t('qg_none')); return; }
+    const mask = Core.usable(G, routeOpts('best')), dm = new Map(), byNode = new Map();
+    for (const c of cand) { const n = Core.nearest(G, c.p.la, c.p.lo, mask); if (!n || n.m > 150 || dm.has(n.i)) continue; dm.set(n.i, n.m / 1.4); byNode.set(n.i, c.p); }
+    const r = dm.size && Core.route(G, Z, ends(L.latLng(from), mask, 'best'), dm, routeOpts('best'));
+    const p = (r && byNode.get(r.path[r.path.length - 1])) || cand[0].p;
+    map.flyTo([p.la, p.lo], Math.max(map.getZoom(), 15), { duration: 0.6 });
+    waypointHere(L.latLng(p.la, p.lo), p.n);
+    toast(t('qg_found', { ty: t('ty_' + ty), n: p.n }));
+  }
+  $('pmSet').onclick = () => { const c = map.getCenter(); waypointHere(c, pmCross.dataset.name || t('waypoint')); };
+  $('pmClear').onclick = clearWaypoint;
+  $('pmQuick').onclick = e => { const b = e.target.closest('button'); if (b) quickGPS(b.dataset.ty); };
+  $('pmLegendBtn').onclick = () => document.body.classList.toggle('lgopen');
+  // icons grow a little as you zoom in, like the game map
+  function blipScale() { const z = map.getZoom(); wrapEl.style.setProperty('--bs', Math.max(0.75, Math.min(1.15, 0.75 + (z - 13) * 0.13)).toFixed(3)); }
+  map.on('zoom', blipScale); blipScale();
+
   /* ---------------- street width layer ---------------- */
   map.createPane('widths'); map.getPane('widths').style.zIndex = 350; // under routes and markers
   const widthRenderer = L.canvas({ pane: 'widths' }), widthLayer = L.layerGroup().addTo(map);
@@ -1739,12 +1847,7 @@
 
   /* ---------------- map taps ---------------- */
   map.on('click', e => {
-    if (paused()) {
-      const name = nearestName(e.latlng), div = document.createElement('div'); div.className = 'pop';
-      div.innerHTML = `<b>${esc(name)}</b><button data-a="to">📍 ${esc(t('set_waypoint'))}</button>${nav ? '' : `<button data-a="from">${esc(t('start_here'))}</button>`}`;
-      div.onclick = ev => { const a = ev.target.dataset.a; if (!a) return; map.closePopup(); setWaypoint(a === 'to' ? 'B' : 'A', e.latlng, name); };
-      L.popup().setLatLng(e.latlng).setContent(div).openOn(map); return;
-    }
+    if (paused()) { map.panTo(e.latlng, { animate: true, duration: 0.35 }); return; } // tap = move the crosshair there
     if (document.body.classList.contains('rotmap')) return; // taps on a turned map land in the wrong place
     if (reportPick) { const ty = reportPick; reportPick = null; hint(''); postReport(ty, e.latlng.lat, e.latlng.lng); return; }
     if (editMode) { toggleSignal(e.latlng); return; }

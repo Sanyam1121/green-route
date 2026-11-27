@@ -252,7 +252,7 @@ body.radar.navigating #hudBars{display:flex;gap:4px;position:fixed;z-index:1400;
 #barProg{background:#5fbf5a}#barSpd{background:#4a8fd8}
 
 /* ---------- map blips (v24) ---------- */
-.blip{width:22px;height:22px;border-radius:50%;background:var(--b);box-shadow:0 0 0 2px #0a0b0c,0 2px 5px #0009;display:flex;align-items:center;justify-content:center;cursor:pointer}
+.blip{width:22px;height:22px;border-radius:50%;background:var(--b);transform:scale(var(--bs,1));transition:transform .15s ease;box-shadow:0 0 0 2px #0a0b0c,0 2px 5px #0009;display:flex;align-items:center;justify-content:center;cursor:pointer}
 .blip svg{width:15px;height:15px;display:block}
 .map-fab{bottom:144px}
 @media(max-width:760px){.map-fab{bottom:auto;top:186px}}
@@ -308,3 +308,32 @@ body.offline .hint::before{content:"📴 "}
 #ask div{display:flex;gap:10px}#ask button{flex:1;min-height:48px;border:0;border-radius:8px;font:700 17px var(--hud,system-ui);color:#fff;background:#ffffff22}
 #askYes{background:#e5383b!important}
 @keyframes askIn{from{opacity:0;transform:translate(-50%,12px)}to{opacity:1;transform:translate(-50%,0)}}
+
+/* ---------- pause map v2 (v29): crosshair, info bar, quick GPS ---------- */
+.blip.hot{transform:scale(calc(var(--bs,1) * 1.45));box-shadow:0 0 0 2px #fff,0 0 0 4px #0a0b0c,0 4px 12px #000c}
+#pmCross,#pmBar,#pmLegendBtn{display:none}
+body.pausemap #pmCross{display:block;position:absolute;left:50%;top:50%;width:38px;height:38px;margin:-19px 0 0 -19px;z-index:3;pointer-events:none;border-radius:50%;border:2.5px solid #fff;box-shadow:0 0 0 2px #0009,inset 0 0 0 2px #0009}
+body.pausemap #pmCross::after{content:"";position:absolute;left:50%;top:50%;width:5px;height:5px;margin:-2.5px 0 0 -2.5px;border-radius:50%;background:#fff;box-shadow:0 0 0 1.5px #000a}
+body.pausemap #pmBar{display:flex;flex-direction:column;gap:8px;position:fixed;z-index:1500;left:16px;right:252px;bottom:calc(14px + env(safe-area-inset-bottom));color:#fff;font-family:var(--hud,system-ui)}
+#pmBar>*{background:rgba(8,9,10,.86);border-radius:8px;backdrop-filter:blur(4px)}
+#pmQuick{display:flex;align-items:center;gap:6px;padding:6px 8px;overflow-x:auto;align-self:flex-start;max-width:100%}
+#pmQuick span{font-size:13px;text-transform:uppercase;letter-spacing:.08em;opacity:.7;padding:0 4px;white-space:nowrap}
+#pmQuick button{border:0;background:#ffffff1c;color:#fff;border-radius:6px;padding:7px 10px;font:600 15px var(--hud,system-ui);white-space:nowrap;min-height:38px}
+#pmQuick button i{font-style:normal}
+#pmTrip{display:flex;align-items:center;gap:12px;padding:8px 12px;border-left:4px solid #c34dff;font-size:16px}
+#pmTrip[hidden]{display:none}#pmTrip span{opacity:.8}
+.pm-row{display:flex;align-items:center;gap:10px;padding:10px 12px}
+#pmIcon{flex:none;width:26px;display:flex;justify-content:center}#pmIcon[hidden]{display:none}
+.pm-txt{flex:1;min-width:0;display:flex;flex-direction:column}
+#pmName{font-size:20px;font-weight:700;letter-spacing:.02em;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+#pmSub{font-size:14px;opacity:.7;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+#pmSet,#pmClear{flex:none;border:0;border-radius:8px;min-height:46px;padding:0 16px;font:700 17px var(--hud,system-ui);color:#fff;background:#c34dff}
+#pmClear{background:#ffffff22}#pmClear[hidden]{display:none}
+@media(max-width:760px){
+  body.pausemap #pmBar{left:8px;right:8px;bottom:calc(8px + env(safe-area-inset-bottom))}
+  body.pausemap #pmLegendBtn{display:block;height:42px;padding:0 12px;border-radius:6px;background:rgba(255,255,255,.12);color:#fff;border:0;font:600 15px var(--hud,system-ui)}
+  body.pausemap #legend{display:none!important}
+  body.pausemap.lgopen #legend{display:grid!important;top:70px;bottom:auto;max-height:52dvh}
+  #pmSet{padding:0 12px;font-size:16px}#pmName{font-size:18px}
+}
+body.pausemap #toast{bottom:calc(210px + env(safe-area-inset-bottom))!important}
