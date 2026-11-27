@@ -9,6 +9,7 @@ var Core = (function () {
   function hav(a1, o1, a2, o2) { const dA = (a2 - a1) * rad, dO = (o2 - o1) * rad; const x = Math.sin(dA / 2) ** 2 + Math.cos(a1 * rad) * Math.cos(a2 * rad) * Math.sin(dO / 2) ** 2; return 2 * R * Math.asin(Math.sqrt(x)); }
   function bearing(a1, o1, a2, o2) { return Math.atan2((o2 - o1) * Math.cos(a1 * rad), a2 - a1) / rad; }
   const angDiff = (a, b) => ((b - a) % 360 + 540) % 360 - 180;
+  const GAP = 65536; // edge info bit: crossing a divided road at a junction gap
 
   // Convert raw Overpass elements to the compact v2 format used by the saved data files.
   function toCompact(elements) {
@@ -50,6 +51,8 @@ var Core = (function () {
     const find = x => { while (par[x] !== x) { par[x] = par[par[x]]; x = par[x]; } return x; };
     const link = (a, b, r) => { const m = nb[a] || (nb[a] = new Map()); if ((m.get(b) ?? -1) < r) m.set(b, r); };
     const vx = c.v >= 2;
+    // one-way main roads (each side of a divided road): which way, and the direction of travel at each node
+    const cwWay = new Int32Array(N).fill(-1), cwBear = new Float32Array(N), cwCls = new Uint8Array(N);
     for (let wi = 0; wi < c.w.length; wi++) {
       const w = c.w[wi];
       const h = c.hw[w[0]] || 'residential', f = w[1];
@@ -57,6 +60,11 @@ var Core = (function () {
       const dir = vx ? (f & 3) - 1 : f;
       const info = clsOf(h) | (vx && (f & 4) ? 16 : 0) | (vx && (f & 8) ? 32 : 0) | (vx && (f & 16) ? 128 : 0) | (vx && (f & 32) ? 256 : 0) | (vx && (f & 64) ? 512 : 0) | (wcode << 10);
       const rk = RANK[h] || 0;
+      if (dir !== 0 && rk > 0) for (let k = 2; k < w.length; k++) {
+        const a = w[k], b = w[k + 1 < w.length ? k + 1 : k - 1], fw = k + 1 < w.length ? 1 : -1;
+        let br = bearing(lat[a], lon[a], lat[b], lon[b]); if (fw * dir < 0) br += 180;
+        cwWay[a] = wi; cwBear[a] = br; cwCls[a] = clsOf(h);
+      }
       for (let k = 2; k + 1 < w.length; k++) {
         const a = w[k], b = w[k + 1];
         const d = hav(lat[a], lon[a], lat[b], lon[b]);
@@ -81,10 +89,38 @@ var Core = (function () {
       for (const b of dirs) if (distinct.every(x => Math.abs(angDiff(x, b)) >= 35)) distinct.push(b);
       if (distinct.length >= 3) likely.push(i);
     }
+    // Divider gaps: where a side street meets one side of a divided road, let routes cross to the other side
+    // (most junctions in Indian cities have a gap in the divider; OpenStreetMap rarely draws it).
+    // Marked GAP (bit 16) so routing can add a waiting penalty or skip them.
+    let gaps = 0;
+    {
+      const CELL = 0.0004, grid = new Map(), key = (a, o) => Math.floor(a / CELL) + ':' + Math.floor(o / CELL);
+      for (let i = 0; i < N; i++) if (cwWay[i] >= 0) { const k = key(lat[i], lon[i]); (grid.get(k) || grid.set(k, []).get(k)).push(i); }
+      const done = new Set();
+      for (let a = 0; a < N; a++) {
+        if (cwWay[a] < 0 || !nb[a] || nb[a].size < 3) continue;
+        let side = false; for (const j of nb[a].keys()) if (cwWay[j] < 0) { side = true; break; }
+        if (!side) continue;
+        const ca = Math.floor(lat[a] / CELL), co = Math.floor(lon[a] / CELL);
+        let bb = -1, bd = 36;
+        for (let x = -1; x <= 1; x++) for (let y = -1; y <= 1; y++) for (const b of grid.get((ca + x) + ':' + (co + y)) || []) {
+          if (cwWay[b] === cwWay[a] || Math.abs(angDiff(cwBear[a], cwBear[b])) < 140) continue;
+          const d = hav(lat[a], lon[a], lat[b], lon[b]); if (d < 5 || d >= bd) continue;
+          const across = Math.abs(angDiff(cwBear[a], bearing(lat[a], lon[a], lat[b], lon[b])));
+          if (d > 12 && (across < 45 || across > 135)) continue; // must go across the road, not along it
+          if (nb[a].has(b)) continue;
+          bd = d; bb = b;
+        }
+        if (bb < 0) continue;
+        const k2 = Math.min(a, bb) + ':' + Math.max(a, bb); if (done.has(k2)) continue; done.add(k2);
+        const info = Math.max(cwCls[a], cwCls[bb]) | GAP;
+        adj[a].push(bb, bd, info); adj[bb].push(a, bd, info); gaps++;
+      }
+    }
     const size = new Map(); let best = -1, bs = 0;
     for (let i = 0; i < N; i++) { if (!adj[i].length) continue; const r = find(i); const k = (size.get(r) || 0) + 1; size.set(r, k); if (k > bs) { bs = k; best = r; } }
     const main = new Uint8Array(N); for (let i = 0; i < N; i++) if (adj[i].length && find(i) === best) main[i] = 1;
-    return { lat, lon, adj, deg, osmSig: c.s || [], cams: c.cam || [], likely, main, N, ways: c.w, hw: c.hw, widths: widths || null };
+    return { lat, lon, adj, deg, osmSig: c.s || [], cams: c.cam || [], likely, main, N, ways: c.w, hw: c.hw, widths: widths || null, gaps };
   }
 
   // Which nodes a traveller can start from / end at (has at least one usable edge).
@@ -170,17 +206,23 @@ var Core = (function () {
     const pop = () => { const n = hn[0], ln = hn.pop(), lk = hk.pop(); if (hn.length) { let i = 0; const L = hn.length; while (true) { let c = 2 * i + 1; if (c >= L) break; if (c + 1 < L && hk[c + 1] < hk[c]) c++; if (hk[c] >= lk) break; hn[i] = hn[c]; hk[i] = hk[c]; i = c; } hn[i] = ln; hk[i] = lk; } return n; };
     const zone = Z.zone, short = o.mode === 'short', P = o.P || 0, cs = o.costSp, nf = o.narrowFactor || 1;
     const pen = o.pen, block = o.block, car = o.who === 'car', rs = o.realSp;
-    dist[src] = 0; push(src, 0);
+    // src / dst: a node, or a Map(node -> extra cost) to pick the best of several nearby road points
+    const srcs = src instanceof Map ? src : new Map([[src, 0]]), dsts = dst instanceof Map ? dst : new Map([[dst, 0]]);
+    for (const [n, c0] of srcs) if (c0 < dist[n]) { dist[n] = c0; push(n, c0); }
+    let bestEnd = -1, bestScore = Infinity;
+    const gapCost = o.noGaps ? Infinity : short ? 25 : (o.gapPen ?? 30);
     while (hn.length) {
       const d0 = hk[0], u = pop();
       if (d0 > dist[u]) continue;
-      if (u === dst) break;
+      if (d0 >= bestScore) break;
+      if (dsts.has(u)) { const sc = d0 + dsts.get(u); if (sc < bestScore) { bestScore = sc; bestEnd = u; } }
       const a = G.adj[u], zu = zone[u];
       for (let k = 0; k < a.length; k += 3) {
         const v = a[k], len = a[k + 1], info = a[k + 2];
-        if (block && block[v] && v !== dst) continue;
+        if (block && block[v] && !dsts.has(v)) continue;
         if (!rs[info & 15] || !allowed(info, o)) continue;
         let c = short ? len : len / cs[info & 15];
+        if (info & GAP) { if (gapCost === Infinity) continue; c += (info & 15) <= 1 ? gapCost * 3 : gapCost; } // highways: few real gaps
         if (car && (info & 16)) c *= nf;
         if (car) { const wc = (info >> 10) & 63; if (wc && wc < 10) c *= 1.5; } // 3.5–5 m: slow, one car at a time
         const zv = zone[v];
@@ -190,14 +232,14 @@ var Core = (function () {
         if (nd < dist[v]) { dist[v] = nd; prev[v] = u; push(v, nd); }
       }
     }
-    if (dist[dst] === Infinity) return null;
-    const path = []; for (let x = dst; x !== -1; x = prev[x]) path.push(x); path.reverse();
+    if (bestEnd < 0) return null;
+    const path = []; for (let x = bestEnd; x !== -1; x = prev[x]) path.push(x); path.reverse();
     return measure(G, Z, path, o.realSp, o);
   }
 
   // Distance, time, small-street and narrow-lane metres, red-light zones and cumulative distance along a path.
   function measure(G, Z, path, realSp, o) {
-    let len = 0, time = 0, small = 0, narrow = 0, r_paths = 0, tight = 0, minW = Infinity, prevTight = false; const tightAt = []; const hit = [], hitAt = [], cum = new Float64Array(path.length), info = new Int32Array(path.length);
+    let gaps = 0, len = 0, time = 0, small = 0, narrow = 0, r_paths = 0, tight = 0, minW = Infinity, prevTight = false; const tightAt = []; const hit = [], hitAt = [], cum = new Float64Array(path.length), info = new Int32Array(path.length);
     for (let k = 0; k + 1 < path.length; k++) {
       const u = path[k], v = path[k + 1], a = G.adj[u];
       for (let j = 0; j < a.length; j += 3) if (a[j] === v && (!o || allowed(a[j + 2], o))) {
@@ -209,13 +251,14 @@ var Core = (function () {
         if (isTight) { tight += a[j + 1]; minW = Math.min(minW, wc / 2); if (!prevTight) tightAt.push([k, wc / 2]); }
         prevTight = isTight;
         if (f & 16) narrow += a[j + 1];
+        if (f & GAP) gaps++;
         break;
       }
       cum[k + 1] = len;
       const zv = Z.zone[v];
       if (zv >= 0 && zv !== Z.zone[u] && k + 1 < path.length - 1) { hit.push(zv); hitAt.push(k + 1); }
     }
-    return { path, len, time, small, narrow, paths: r_paths, tight, minW: isFinite(minW) ? minW : 0, tightAt, signals: hit, signalAt: hitAt, cum, info };
+    return { path, len, time, gaps, small, narrow, paths: r_paths, tight, minW: isFinite(minW) ? minW : 0, tightAt, signals: hit, signalAt: hitAt, cum, info };
   }
 
   // Turn-by-turn steps from a measured route.
@@ -235,7 +278,8 @@ var Core = (function () {
       const type = abs >= 150 ? 'uturn' : abs >= 120 ? 'sharp' : abs >= 55 ? 'turn' : 'slight';
       const nextInfo = r.info[k + 1] || 0, prevInfo = r.info[k] || 0;
       const intoGali = (nextInfo & 15) >= 5 && (prevInfo & 15) < 5;
-      const st = { k, at: r.cum[k], type, side: ang > 0 ? 'right' : 'left', gali: intoGali };
+      let gap = false; for (let j = a; j < b; j++) if ((r.info[j + 1] || 0) & GAP) gap = true;
+      const st = { k, at: r.cum[k], type, side: ang > 0 ? 'right' : 'left', gali: intoGali, gap };
       const last = out[out.length - 1];
       if (last && st.at - last.at < 15) { if (abs > 45) out[out.length - 1] = st; continue; }
       out.push(st);
@@ -259,6 +303,6 @@ var Core = (function () {
     return best;
   }
 
-  return { build, toCompact, nearest, nearMany, usable, allowed, zones, route, measure, steps, project, hav, bearing, CLASSES };
+  return { GAP, build, toCompact, nearest, nearMany, usable, allowed, zones, route, measure, steps, project, hav, bearing, CLASSES };
 })();
 if (typeof module !== 'undefined') module.exports = Core;

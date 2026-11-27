@@ -20,7 +20,7 @@
     amritsar: { bbox: [31.59, 74.81, 31.68, 74.93], center: [31.634, 74.873] },
     phagwara: { bbox: [31.20, 75.74, 31.25, 75.80], center: [31.224, 75.770] },
   };
-  const opt = Object.assign({ blips: true, blipHide: [], vehicle: 'car', traffic: 'auto', lang: 'en', theme: 'auto', voice: true, likely: true, wait: 45, city: 'jalandhar', widths: false, chowks: true, look: 'game', rotate: true, tilt: true }, store.get('gr-opt', {}));
+  const opt = Object.assign({ gaps: true, blips: true, blipHide: [], vehicle: 'car', traffic: 'auto', lang: 'en', theme: 'auto', voice: true, likely: true, wait: 45, city: 'jalandhar', widths: false, chowks: true, look: 'game', rotate: true, tilt: true }, store.get('gr-opt', {}));
   if (!CITIES[opt.city]) opt.city = 'jalandhar';
   const saveOpt = () => store.set('gr-opt', opt);
 
@@ -70,7 +70,7 @@
   function setBase() {
     if (baseLayer) map.removeLayer(baseLayer);
     baseLayer = gameOn()
-      ? L.maplibreGL({ style: 'styles/game.json?v=26', updateInterval: 0, attribution: '&copy; <a href="https://openfreemap.org">OpenFreeMap</a> &copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>' })
+      ? L.maplibreGL({ style: 'styles/game.json?v=27', updateInterval: 0, attribution: '&copy; <a href="https://openfreemap.org">OpenFreeMap</a> &copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>' })
       : L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 19, attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>' });
     if (baseLayer._roundPoint) baseLayer._roundPoint = p => p; // sub-pixel placement keeps the basemap glued to the route line
     baseLayer.addTo(map);
@@ -261,7 +261,9 @@
   }
   function routeOpts(mode, when) {
     const sp = speeds(false, when), car = opt.vehicle === 'car';
-    const base = { who: opt.vehicle, realSp: sp, narrowFactor: car ? 2.5 : 1, pen: car ? pen.car : pen.bike, block, narrowBlock: car && !relaxNarrow };
+    // divider gaps cost a wait (crossing traffic / U-turn); off in Settings if they cause bad routes
+    const gapPen = { car: 30, bike: 15, cycle: 10, walk: 5 }[opt.vehicle] ?? 30;
+    const base = { who: opt.vehicle, realSp: sp, narrowFactor: car ? 2.5 : 1, pen: car ? pen.car : pen.bike, block, narrowBlock: car && !relaxNarrow, gapPen, noGaps: !opt.gaps };
     if (mode === 'short') return { ...base, mode: 'short', costSp: sp };
     if (mode === 'few') return { ...base, mode: 'time', P: 900, costSp: sp };
     if (mode === 'gali') return { ...base, mode: 'time', P: lightWait() * 1.5, costSp: speeds(true, when) };
@@ -275,34 +277,35 @@
     const s = Core.nearest(G, A.lat, A.lng, mask), d = Core.nearest(G, B.lat, B.lng, mask);
     if (!s || !d || s.m > 800 || d.m > 800) { status(t('outside_area'), true); return; }
     if (s.i === d.i) { status(t('same_spot'), true); return; }
-    // try nearby start points (e.g. the other side of a divided road) and keep the quickest
-    let best = null, src = s.i;
-    for (const c of Core.nearMany(G, A.lat, A.lng, 35, 6, mask)) {
-      const r = Core.route(G, Z, c.i, d.i, routeOpts('best')); if (!r) continue;
-      const score = r.time + r.signals.length * lightWait() + c.m / 1.4;
-      if (!best || score < best._score) { best = r; best._score = score; src = c.i; }
-    }
+    // several nearby road points at both ends (e.g. either side of a divided road); one search picks the best pair
+    const best = Core.route(G, Z, ends(A, mask, 'best'), ends(B, mask, 'best'), routeOpts('best'));
     if (!best && opt.vehicle === 'car' && !relaxNarrow) { relaxNarrow = true; return goRelaxed(); }
     if (!best) { status(t('no_route'), true); return; }
     results = { best };
-    for (const m of ['gali', 'short', 'few']) results[m] = Core.route(G, Z, src, d.i, routeOpts(m));
+    for (const m of ['gali', 'short', 'few']) results[m] = Core.route(G, Z, ends(A, mask, m), ends(B, mask, m), routeOpts(m));
     for (const m of Object.keys(results)) if (!results[m]) delete results[m];
     if (!results[sel]) sel = 'best';
-    results._dst = d.i;
+    results._dst = best.path[best.path.length - 1];
     status(t('tap_compare'));
     updateHash(); saveRecent();
     render();
     const bnd = L.latLngBounds([[A.lat, A.lng], [B.lat, B.lng]]);
     if (isPhone() || !map.getBounds().pad(-0.1).contains(bnd)) map.fitBounds(bnd, { padding: isPhone() ? [40, 40] : [60, 60], paddingBottomRight: isPhone() ? [30, Math.round($('panel').offsetHeight + 30)] : [60, 60] });
   }
+  // nearby road points for a pin, with the cost of getting from the pin to each (metres for 'short', seconds otherwise)
+  function ends(P, mask, mode) {
+    const m = new Map();
+    for (const c of Core.nearMany(G, P.lat, P.lng, 35, 6, mask)) m.set(c.i, mode === 'short' ? c.m : c.m / 1.4);
+    return m;
+  }
   // A car can't reach the spot without a very narrow lane: route anyway (lanes still cost more) and say so
   function goRelaxed() {
     const mask = Core.usable(G, routeOpts('best'));
     const s = Core.nearest(G, A.lat, A.lng, mask), d = Core.nearest(G, B.lat, B.lng, mask);
-    const best = s && d && Core.route(G, Z, s.i, d.i, routeOpts('best'));
+    const best = s && d && Core.route(G, Z, ends(A, mask, 'best'), ends(B, mask, 'best'), routeOpts('best'));
     if (!best) { status(t('no_route'), true); return; }
-    results = { best, _dst: d.i };
-    for (const m of ['gali', 'short', 'few']) { const r = Core.route(G, Z, s.i, d.i, routeOpts(m)); if (r) results[m] = r; }
+    results = { best, _dst: best.path[best.path.length - 1] };
+    for (const m of ['gali', 'short', 'few']) { const r = Core.route(G, Z, ends(A, mask, m), ends(B, mask, m), routeOpts(m)); if (r) results[m] = r; }
     if (!results[sel]) sel = 'best';
     status(t('only_narrow'), true); updateHash(); saveRecent(); render();
   }
@@ -310,12 +313,36 @@
   const km = r => (r.len / 1000).toFixed(r.len < 10000 ? 1 : 0);
   const galiPct = r => Math.round(100 * r.small / Math.max(1, r.len));
 
+  // the closest point to a pin on a road touching the route's first/last node; the line starts/ends there
+  function snapOnRoad(node, la, lo) {
+    const a = G.adj[node], cx = Math.cos(la * Math.PI / 180);
+    let best = [G.lat[node], G.lon[node]], bd = Core.hav(la, lo, best[0], best[1]), via = -1;
+    for (let k = 0; k < a.length; k += 3) {
+      if (a[k + 2] & Core.GAP) continue;
+      const v = a[k], ax = G.lon[node] * cx, ay = G.lat[node], bx = G.lon[v] * cx, by = G.lat[v], px = lo * cx, py = la;
+      const dx = bx - ax, dy = by - ay, L2 = dx * dx + dy * dy; if (!L2) continue;
+      const tt = Math.max(0, Math.min(1, ((px - ax) * dx + (py - ay) * dy) / L2)), q = [ay + tt * dy, (ax + tt * dx) / cx];
+      const d = Core.hav(la, lo, q[0], q[1]); if (d < bd - 0.5) { bd = d; best = q; via = v; }
+    }
+    return { p: best, via };
+  }
+  function routeLL(r) {
+    const ll = r.path.map(i => [G.lat[i], G.lon[i]]), n = r.path.length;
+    if (A && n > 1) { const s = snapOnRoad(r.path[0], A.lat, A.lng); if (s.via === r.path[1]) ll[0] = s.p; else if (s.via >= 0) ll.unshift(s.p); }
+    if (B && n > 1) { const e = snapOnRoad(r.path[n - 1], B.lat, B.lng); if (e.via === r.path[n - 2]) ll[ll.length - 1] = e.p; else if (e.via >= 0) ll.push(e.p); }
+    return ll;
+  }
   function render() {
     routeLayer.clearLayers();
     const ids = Object.keys(MODES).filter(k => results[k]);
     for (const id of [...ids].sort((a, b) => (a === sel) - (b === sel))) {
-      const r = results[id], ll = r.path.map(i => [G.lat[i], G.lon[i]]), on = id === sel;
+      const r = results[id], ll = routeLL(r), on = id === sel;
       drawLine(ll, MODES[id].color, on, routeLayer, () => { sel = id; render(); });
+    }
+    { // dotted line from each pin to where the route meets the road
+      const ll = routeLL(results[sel]);
+      for (const [pin, q] of [[A, ll[0]], [B, ll[ll.length - 1]]]) if (pin && Core.hav(pin.lat, pin.lng, q[0], q[1]) > 8)
+        L.polyline([[pin.lat, pin.lng], q], { color: gameOn() ? '#fff' : '#334', weight: 2.5, opacity: .7, dashArray: '2 7', lineCap: 'round', interactive: false }).addTo(routeLayer);
     }
     const cur = results[sel];
     for (const z of new Set(cur.signals)) { const c = Z.clusters[z]; L.circleMarker([c.lat, c.lon], { radius: 9, color: '#fff', weight: 2.5, fillColor: c.kind === 'sure' ? '#e5383b' : '#f2a516', fillOpacity: 1 }).bindTooltip(t(c.kind === 'sure' ? 'light_on_route' : 'likely_on_route')).addTo(routeLayer); }
@@ -997,7 +1024,7 @@
   const ARROW = { left: { slight: '↖', turn: '↰', sharp: '↲', uturn: '↶' }, right: { slight: '↗', turn: '↱', sharp: '↳', uturn: '↷' } };
   function action(st) {
     if (st.type === 'arrive') return t('v_arrive_soon');
-    const a = t('a_' + st.type + '_' + st.side) + (st.gali ? ' ' + t('into_gali') : '');
+    const a = t('a_' + st.type + '_' + st.side) + (st.gap ? ' ' + t('at_gap') : '') + (st.gali ? ' ' + t('into_gali') : '');
     return st.chowk ? t('at_chowk', { c: st.chowk, a }) : a;
   }
   function distText(m) { return m >= 1000 ? (m / 1000).toFixed(1) + ' km' : (m < 100 ? Math.round(m / 10) * 10 : Math.round(m / 50) * 50) + ' m'; }
@@ -1078,7 +1105,7 @@
     if ((nav.off >= 2 || pr.off > 90) && Date.now() - nav.lastReroute > 8000) {
       nav.lastReroute = Date.now();
       const s = Core.nearest(G, la, lo, Core.usable(G, routeOpts(nav.mode)));
-      const r = s && Core.route(G, Z, s.i, results._dst, routeOpts(nav.mode));
+      const r = s && Core.route(G, Z, s.i, B ? ends(B, Core.usable(G, routeOpts(nav.mode)), nav.mode) : results._dst, routeOpts(nav.mode));
       if (r) { speak(t('v_reroute')); setNavRoute(r); return onPos(p); }
     }
     nav.k = pr.k;
@@ -1664,7 +1691,7 @@
     $('trWrap').hidden = !motor();
     $('trSel').options[0].textContent = t('auto_tr', { t: t('tr_' + autoTraffic()) }); $('trSel').value = opt.traffic;
     $('citySel').value = opt.city; $('langSel').value = opt.lang; $('themeSel').value = opt.theme; $('lookSel').value = opt.look;
-    $('widths').checked = opt.widths; $('chowksOn').checked = opt.chowks; $('blipsOn').checked = opt.blips; $('rotateOn').checked = opt.rotate; $('tiltOn').checked = opt.tilt;
+    $('widths').checked = opt.widths; $('chowksOn').checked = opt.chowks; $('blipsOn').checked = opt.blips; $('gapsOn').checked = opt.gaps; $('rotateOn').checked = opt.rotate; $('tiltOn').checked = opt.tilt;
     $('voice').checked = opt.voice; $('likely').checked = opt.likely; $('wait').value = opt.wait; $('wv').textContent = opt.wait + ' s';
   }
   $('vehSeg').onclick = e => { const b = e.target.closest('button'); if (!b) return; opt.vehicle = b.dataset.v; saveOpt(); drawOpts(); go(); };
@@ -1676,6 +1703,7 @@
   $('rotateOn').onchange = () => { opt.rotate = $('rotateOn').checked; saveOpt(); startLoop(); };
   $('tiltOn').onchange = () => { opt.tilt = $('tiltOn').checked; saveOpt(); camState = ''; startLoop(); };
   $('chowksOn').onchange = () => { opt.chowks = $('chowksOn').checked; saveOpt(); drawChowks(); };
+  $('gapsOn').onchange = () => { opt.gaps = $('gapsOn').checked; saveOpt(); if (A && B && !nav) go(); };
   $('blipsOn').onchange = () => { opt.blips = $('blipsOn').checked; if (opt.blips) opt.blipHide = []; saveOpt(); drawBlips(); };
   $('widths').onchange = () => { opt.widths = $('widths').checked; saveOpt(); if (opt.widths && !(G && G.widths)) toast(t('widths_none')); if (opt.widths && map.getZoom() < 15) map.setZoom(15); drawWidths(); };
   $('voice').onchange = () => { opt.voice = $('voice').checked; saveOpt(); if (opt.voice) speak(t('v_test')); };
