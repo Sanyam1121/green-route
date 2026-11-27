@@ -70,7 +70,7 @@
   function setBase() {
     if (baseLayer) map.removeLayer(baseLayer);
     baseLayer = gameOn()
-      ? L.maplibreGL({ style: 'styles/game.json?v=29', updateInterval: 0, attribution: '&copy; <a href="https://openfreemap.org">OpenFreeMap</a> &copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>' })
+      ? L.maplibreGL({ style: 'styles/game.json?v=30', updateInterval: 0, attribution: '&copy; <a href="https://openfreemap.org">OpenFreeMap</a> &copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>' })
       : L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 19, attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>' });
     if (baseLayer._roundPoint) baseLayer._roundPoint = p => p; // sub-pixel placement keeps the basemap glued to the route line
     baseLayer.addTo(map);
@@ -971,8 +971,25 @@
     // labels stay upright: updated in small steps (cheap) and exactly once the turn settles
     const settled = angDist(me.rotGoal == null ? me.mapRot : me.rotGoal, me.mapRot) < 0.1;
     if (cam.labelRot == null || angDist(cam.labelRot, me.mapRot) > 1.5 || (settled && cam.labelRot !== me.mapRot)) { cam.labelRot = me.mapRot; rotEl.style.setProperty('--rot', (-me.mapRot).toFixed(1) + 'deg'); }
-    drawNorth(on, cam.tilt);
+    drawNorth(on, cam.tilt); drawEdgeWaypoint(on, cam.tilt);
     return cam.tilt !== tiltGoal || cam.scale !== scaleGoal;
+  }
+  // destination off the screen: a purple waypoint marker pinned to the edge in its direction (like the game radar)
+  const wpEl = $('edgeWp');
+  function drawEdgeWaypoint(on, tilt) {
+    if (!wpEl) return;
+    const tgt = B && me.disp;
+    if (!tgt || !nav || isPaused()) { wpEl.hidden = true; return; }
+    const W = wrapEl.clientWidth, H = wrapEl.clientHeight, small = document.body.classList.contains('radar');
+    const mpp = 40075016 * Math.cos(me.disp.lat * Math.PI / 180) / Math.pow(2, map.getZoom() + 8) / (cam.scale || 1);
+    const dist = Core.hav(me.disp.lat, me.disp.lng, B.lat, B.lng);
+    if (dist < mpp * Math.min(W, H) * 0.42) { wpEl.hidden = true; return; } // on screen already
+    wpEl.hidden = false;
+    const rx = W / 2 - (small ? 16 : 34), ry = H / 2 - (small ? 16 : 120);
+    const a = (Core.bearing(me.disp.lat, me.disp.lng, B.lat, B.lng) - (on ? me.mapRot : 0)) * Math.PI / 180;
+    let vx = Math.sin(a), vy = -Math.cos(a) * Math.cos(tilt * Math.PI / 180);
+    const ln = Math.hypot(vx / rx, vy / ry) || 1;
+    wpEl.style.transform = `translate(${(W / 2 + vx / ln - 12).toFixed(1)}px,${(H / 2 + vy / ln - 12).toFixed(1)}px)`;
   }
   // north blip on the screen edge, like a game radar
   function drawNorth(on, tilt) {
@@ -1114,6 +1131,7 @@
     { const rp = nav.r.path, k = Math.min(pr.k, rp.length - 2); nav.routeHead = (Core.bearing(G.lat[rp[k]], G.lon[rp[k]], G.lat[rp[k + 1]], G.lon[rp[k + 1]]) + 360) % 360; }
     showMe(ll, p.coords.heading, p.coords.speed);
     if (acc < 40) watchStop(la, lo);
+    streetAhead(la, lo);
     // on the route: the arrow is drawn ON the road and glides along it at the measured speed
     { const tN = performance.now(), gs = p.coords.speed;
       if (pr.off < 30) {
@@ -1170,6 +1188,7 @@
     $('navLeft').textContent = `${Math.max(1, Math.round(secLeft / 60))} ${t('min')} · ${distText(left)} · ${t('lights_short', { n: lightsLeft })} · ${t('arrive_at', { t: eta })}`;
     $('navMute').textContent = opt.voice ? '🔊' : '🔇';
     $('barProg').style.width = (100 * Math.min(1, along / Math.max(1, nav.r.len))).toFixed(1) + '%';
+    $('radarDist').textContent = '→ ' + fmtDist(Math.max(0, nav.r.len - along));
     $('barSpd').style.width = Math.min(100, (nav.v || me.speed || 0) * 3.6 / 60 * 100).toFixed(1) + '%';
   }
   map.on('dragstart', () => { if (nav) { nav.follow = false; $('navCenter').hidden = false; startLoop(); } });
@@ -1263,22 +1282,23 @@
   /* ---------------- map blips: round game-style icons for useful places ---------------- */
   const BLIP = { // order = priority when icons crowd; z = smallest zoom where it shows
     police: { z: 13, bg: '#2f6fd6', svg: '<path d="M8 1.8l1.8 3.9 4.2.5-3.1 2.9.8 4.2L8 11.2l-3.7 2.1.8-4.2L2 6.2l4.2-.5z"/>' },
-    fuel: { z: 13, bg: '#e0522f', svg: '<path d="M3 2.5h6.5v11H3z"/><path d="M4.3 4h3.9v3H4.3z" fill="#e0522f"/><path d="M9.5 5.5l2.2 1.6v4.4a.9.9 0 0 0 1.8 0V6L12 4.3" fill="none" stroke="#fff" stroke-width="1.3" stroke-linecap="round"/>' },
-    train: { z: 12, bg: '#5d6d79', svg: '<rect x="4" y="2" width="8" height="9.5" rx="2"/><rect x="5.3" y="3.6" width="5.4" height="3" rx=".6" fill="#0007"/><path d="M5 12.5l-1.5 2M11 12.5l1.5 2" stroke="#fff" stroke-width="1.3" stroke-linecap="round"/>' },
+    fuel: { z: 13, bg: '#e0522f', svg: '<path d="M3 2.5h6.5v11H3z"/><path d="M4.3 4h3.9v3H4.3z" fill="#000b"/><path d="M9.5 5.5l2.2 1.6v4.4a.9.9 0 0 0 1.8 0V6L12 4.3" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/>' },
+    train: { z: 12, bg: '#5d6d79', svg: '<rect x="4" y="2" width="8" height="9.5" rx="2"/><rect x="5.3" y="3.6" width="5.4" height="3" rx=".6" fill="#0007"/> <path d="M5 12.5l-1.5 2M11 12.5l1.5 2" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/>' },
     bus: { z: 13, bg: '#e5a321', svg: '<rect x="3" y="2.5" width="10" height="9.5" rx="1.8"/><rect x="4.3" y="4" width="7.4" height="3.4" rx=".5" fill="#0006"/><circle cx="5.3" cy="13" r="1.2"/><circle cx="10.7" cy="13" r="1.2"/>' },
     ev: { z: 14, bg: '#2aa3b8', svg: '<path d="M9.2 1.8 4 9h3.5l-1 5.2L12 7H8.4z"/>' },
-    hospital: { z: 15, cap: 18, bg: '#ffffff', svg: '<path d="M6.3 2.5h3.4v3.8h3.8v3.4H9.7v3.8H6.3V9.7H2.5V6.3h3.8z" fill="#e23b3b"/>' },
+    hospital: { z: 15, cap: 18, bg: '#ffffff', c: '#ff4d4d', svg: '<path d="M6.3 2.5h3.4v3.8h3.8v3.4H9.7v3.8H6.3V9.7H2.5V6.3h3.8z" fill="#e23b3b"/>' },
     cinema: { z: 15, bg: '#c43d8a', svg: '<path d="M5.5 3.5v9l7-4.5z"/>' },
-    market: { z: 15, cap: 15, bg: '#d9822b', svg: '<path d="M3.5 5.5h9l-.8 8h-7.4z"/><path d="M6 6V4.5a2 2 0 0 1 4 0V6" fill="none" stroke="#fff" stroke-width="1.3"/>' },
+    market: { z: 15, cap: 15, bg: '#d9822b', svg: '<path d="M3.5 5.5h9l-.8 8h-7.4z"/><path d="M6 6V4.5a2 2 0 0 1 4 0V6" fill="none" stroke="currentColor" stroke-width="1.3"/>' },
     gurdwara: { z: 15, bg: '#e08a1e', svg: '<text x="8" y="12.2" text-anchor="middle" font-size="11" font-weight="700" font-family="Noto Sans Gurmukhi,sans-serif">ੴ</text>' },
     mosque: { z: 15, bg: '#2e9e5b', svg: '<text x="8" y="12.4" text-anchor="middle" font-size="12" font-family="sans-serif">☪</text>' },
     church: { z: 15, bg: '#5d6d79', svg: '<path d="M7 2h2v3.5h3v2H9V14H7V7.5H4v-2h3z"/>' },
     temple: { z: 16, cap: 15, bg: '#e08a1e', svg: '<text x="8" y="12.2" text-anchor="middle" font-size="11" font-weight="700" font-family="Noto Sans Devanagari,sans-serif">ॐ</text>' },
     atm: { z: 16, cap: 15, bg: '#3aa55a', svg: '<text x="8" y="12.4" text-anchor="middle" font-size="12" font-weight="800" font-family="system-ui,sans-serif">₹</text>' },
-    pharmacy: { z: 16, bg: '#ffffff', svg: '<path d="M6.3 2.5h3.4v3.8h3.8v3.4H9.7v3.8H6.3V9.7H2.5V6.3h3.8z" fill="#2e9e5b"/>' },
+    pharmacy: { z: 16, bg: '#ffffff', c: '#3fcf7a', svg: '<path d="M6.3 2.5h3.4v3.8h3.8v3.4H9.7v3.8H6.3V9.7H2.5V6.3h3.8z" fill="#2e9e5b"/>' },
   };
   const BLIP_ORDER = Object.keys(BLIP);
-  const blipHtml = ty => `<div class="blip" style="--b:${BLIP[ty].bg}"><svg viewBox="0 0 16 16" fill="#fff">${BLIP[ty].svg}</svg></div>`;
+  // game-style blip: a bare coloured symbol with a thin dark outline (no badge)
+  const blipHtml = ty => { const d = BLIP[ty], c = d.c || (d.bg === '#ffffff' ? '#eee' : d.bg); return `<div class="blip" style="--b:${d.bg};color:${c}"><svg viewBox="0 0 16 16" fill="currentColor">${d.svg}</svg></div>`; };
   map.createPane('blips'); map.getPane('blips').style.zIndex = 615;
   const blipLayer = L.layerGroup().addTo(map);
   let blipCounts = {};
@@ -1357,10 +1377,12 @@
     ['chowk', '<i class="lg-chowk"></i>'], ['light', '<i class="lg-dot" style="background:#e5383b"></i>'], ['likely', '<i class="lg-dot" style="background:#f2a516"></i>'],
   ];
   function drawLegend() {
+    const on = opt.blips ? BLIP_ORDER.filter(x => !(opt.blipHide || []).includes(x)).length : 0;
     const hide = new Set(opt.blipHide || []);
     let h = LEGEND_FIXED.map(([k, ic]) => `<button class="lg ${k === 'chowk' && !opt.chowks ? 'off' : ''}" data-fixed="${k}" ${k === 'chowk' ? '' : 'disabled'}><span class="lg-ic">${ic}</span><span>${esc(t('lg_' + k))}</span></button>`).join('');
     h += `<div class="lg-sep">${esc(t('lg_places'))}</div>`;
     h += BLIP_ORDER.map(ty => `<button class="lg ${hide.has(ty) || !opt.blips ? 'off' : ''}" data-ty="${ty}"><span class="lg-ic">${blipHtml(ty)}</span><span>${esc(t('ty_' + ty))}</span><em>${blipCounts[ty] || ''}</em></button>`).join('');
+    h += `<div class="lg-count">${on}/${BLIP_ORDER.length}</div>`;
     $('legendList').innerHTML = h;
   }
   $('legendList').addEventListener('click', e => {
@@ -1388,6 +1410,7 @@
   $('pauseBtn').onclick = openPause; $('navMap').onclick = openPause; $('pmClose').onclick = closePause;
   addEventListener('keydown', e => {
     if (e.key === 'Escape' && paused()) { closePause(); return; }
+    if (e.key === 'Enter' && paused() && !(e.target.closest && e.target.closest('input,textarea,select,button'))) { $('pmSet').click(); return; }
     if (e.target.closest && e.target.closest('input,textarea,select')) return;
     if ((e.key === 'm' || e.key === 'M') && !e.ctrlKey && !e.metaKey && !e.altKey) paused() ? closePause() : openPause();
   }, true); // capture: Leaflet's keyboard handler would otherwise swallow Escape
@@ -1686,6 +1709,26 @@
   }
   const isNoCarAt = (la, lo) => { const e = nearestEdge(la, lo, 25); return !!(e && noCar.has(e.u * G.N + e.v)); };
 
+  /* ---------------- street / area name as you drive into it (bottom right, like the game) ---------------- */
+  let stLast = null, stName = '', stT = 0, stBusy = false, stShownChowk = '';
+  function showStreet(name, sub) {
+    const el = $('streetName'); el.innerHTML = `<b>${esc(name)}</b>${sub ? `<small>${esc(sub)}</small>` : ''}`;
+    el.classList.remove('show'); void el.offsetWidth; el.classList.add('show');
+    clearTimeout(stT); stT = setTimeout(() => el.classList.remove('show'), 5000);
+  }
+  async function streetAhead(la, lo) {
+    const c = chowkAt(la, lo, 35);
+    if (c && c.n !== stShownChowk) { stShownChowk = c.n; showStreet(c.n, t('lg_chowk')); }
+    if (stBusy || !navigator.onLine || (stLast && Core.hav(stLast[0], stLast[1], la, lo) < 120)) return;
+    stBusy = true; stLast = [la, lo];
+    try {
+      const r = await fetch(`https://nominatim.openstreetmap.org/reverse?format=jsonv2&zoom=17&accept-language=${opt.lang === 'en' ? 'en' : opt.lang + ',en'}&lat=${la.toFixed(5)}&lon=${lo.toFixed(5)}`);
+      const a = ((await r.json()).address) || {}, road = a.road || a.pedestrian;
+      if (road && road !== stName) { stName = road; showStreet(road, a.neighbourhood || a.suburb || ''); }
+    } catch (e) { }
+    setTimeout(() => { stBusy = false; }, 8000); // at most one lookup every 8 s
+  }
+
   /* ---------------- navigation: line shrinks behind you ---------------- */
   let trimAt = -1;
   function trimNavLine(a) {
@@ -1726,8 +1769,20 @@
       else { name = offlineName(c); sub = ''; clearTimeout(pmGeoT); pmGeoT = setTimeout(() => reverseGeo(c, k), 500); }
       pmCross.dataset.name = name;
     }
-    $('pmIcon').innerHTML = icon; $('pmName').textContent = name; $('pmSub').textContent = (sub || '') + away;
+    $('pmIcon').innerHTML = icon; $('pmName').textContent = name; $('pmSub').textContent = (hot || ch ? sub || '' : '') + (hot || ch ? away : away.replace(/^ · /, ''));
     $('pmIcon').hidden = !icon;
+    if (!hot && !ch && sub) pmAreaName = sub.split(',')[0];
+    if (!pmAreaName) pmAreaName = offlineArea(c);
+    $('pmArea').textContent = pmAreaName; $('pmArea').hidden = !pmAreaName;
+    // scale bar: a round distance about 90 px long
+    const nice = [20, 50, 100, 200, 500, 1000, 2000, 5000, 10000].find(x => x / mpp >= 70) || 10000;
+    $('pmScaleBar').style.width = (nice / mpp).toFixed(0) + 'px'; $('pmScaleTxt').textContent = fmtDist(nice);
+  }
+  let pmAreaName = '';
+  function offlineArea(c) {
+    let best = null, bd = 2500;
+    for (const p of PL) { if (p.ty !== 'area') continue; const d = Core.hav(p.la, p.lo, c.lat, c.lng); if (d < bd) { bd = d; best = p; } }
+    return best ? best.n : '';
   }
   function offlineName(c) {
     const n = nearestName(c); if (n !== t('waypoint')) return n;
@@ -1771,7 +1826,7 @@
     pmTrip = !!(r && B);
     $('pmClear').hidden = !pmTrip;
     $('pmTrip').hidden = !pmTrip;
-    if (pmTrip) $('pmTrip').innerHTML = `<b>📍 ${esc($('qB').value || t('waypoint'))}</b><span>${km(r)} km · ${mins(r)} ${esc(t('min'))} · ${esc(t('lights', { n: r.signals.length }))}</span>`;
+    if (pmTrip) $('pmTrip').innerHTML = `<b>${esc($('qB').value || t('waypoint'))}</b><span>${km(r)} km · ${mins(r)} ${esc(t('min'))} · ${esc(t('lights', { n: r.signals.length }))}</span>`;
   }
   function clearWaypoint() {
     if (nav) stopNav();
@@ -1794,6 +1849,7 @@
   }
   $('pmSet').onclick = () => { const c = map.getCenter(); waypointHere(c, pmCross.dataset.name || t('waypoint')); };
   $('pmClear').onclick = clearWaypoint;
+  $('pmZoom').onclick = e => { const k = e.target.closest('kbd'); if (k) map.setZoom(map.getZoom() + (+k.dataset.z) * 0.5); };
   $('pmQuick').onclick = e => { const b = e.target.closest('button'); if (b) quickGPS(b.dataset.ty); };
   $('pmLegendBtn').onclick = () => document.body.classList.toggle('lgopen');
   // icons grow a little as you zoom in, like the game map

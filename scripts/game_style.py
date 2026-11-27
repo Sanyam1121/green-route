@@ -2,13 +2,13 @@
 Run: python3 scripts/game_style.py"""
 import json, pathlib
 
-P = dict(  # palette
-    land='#2f3336', res='#34383b', building='#3f4448', building_line='#484e52',
-    park='#2f4733', wood='#2a4230', grass='#33493a', sand='#4f4b3c', aero='#3a3e41',
-    water='#2e5068', waterway='#3f6c88',
-    casing='#191c1e', path='#5d6266', service='#575c60', minor='#7a7f83', tertiary='#979b9e',
-    secondary='#adb0b2', primary='#c4c6c7', trunk='#d9dadb', motorway='#ececec', rail='#55595c',
-    label='#d3d6d8', label_dim='#a7abae', halo='#121416', water_label='#8fb6cf',
+P = dict(  # palette taken from the game's pause map: near-black land, plain grey roads, grey water, no green
+    land='#121313', res='#141515', building='#1b1c1d', building_line='#202223',
+    park='#151716', wood='#141615', grass='#151716', sand='#1d1d1b', aero='#191a1b',
+    water='#343637', waterway='#3b3d3e',
+    casing='#121313', path='#4a4c4d', service='#5f6162', minor='#7f8183', tertiary='#9a9c9d',
+    secondary='#a9abac', primary='#b6b8b9', trunk='#c3c5c6', motorway='#cfd1d2', rail='#3e4041',
+    label='#c9cbcc', label_dim='#8d9091', halo='#0b0c0c', water_label='#9a9d9f',
 )
 
 def w(*stops):
@@ -78,7 +78,7 @@ layers += [
     {'id': 'rail', 'type': 'line', 'source': 'om', 'source-layer': 'transportation', 'minzoom': 10,
      'filter': cls('rail', 'transit'),
      'paint': {'line-color': P['rail'], 'line-width': w(10, 0.8, 16, 2.4), 'line-dasharray': [3, 2]}},
-    {'id': 'road-label', 'type': 'symbol', 'source': 'om', 'source-layer': 'transportation_name', 'minzoom': 15,
+    {'id': 'road-label', 'type': 'symbol', 'source': 'om', 'source-layer': 'transportation_name', 'minzoom': 16.5,
      'filter': cls('primary', 'secondary', 'tertiary', 'trunk', 'minor', 'motorway'),
      'layout': {'symbol-placement': 'line', 'text-field': ['upcase', name], 'text-font': ['Noto Sans Bold'],
                 'text-size': w(15, 9, 18, 12), 'text-letter-spacing': 0.1, 'text-pitch-alignment': 'viewport'},

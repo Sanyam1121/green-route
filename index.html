@@ -12,7 +12,7 @@
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
 <link rel="stylesheet" href="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.css">
 <link href="https://fonts.googleapis.com/css2?family=Hanken+Grotesk:wght@400;600;800&family=Noto+Sans+Devanagari:wght@400;600;800&family=Noto+Sans+Gurmukhi:wght@400;600;800&family=Rajdhani:wght@600;700&family=Barlow+Condensed:wght@500;600;700&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="css/style.css?v=29">
+<link rel="stylesheet" href="css/style.css?v=30">
 </head>
 <body>
 <div id="app">
@@ -91,7 +91,9 @@
 <div id="mapwrap">
   <div id="rot"><div id="map"></div></div>
   <div id="northBlip" hidden>N</div>
-  <div id="pmCross" aria-hidden="true"></div>
+  <div id="edgeWp" hidden><svg viewBox="0 0 24 24"><path d="M12 2a7 7 0 0 0-7 7c0 5 7 13 7 13s7-8 7-13a7 7 0 0 0-7-7z"/><circle cx="12" cy="9" r="2.6" fill="#fff"/></svg></div>
+  <div id="pmCross" aria-hidden="true"><i class="h"></i><i class="v"></i></div>
+  <div id="pmTip"><span id="pmIcon" hidden></span><div><b id="pmName"></b><small id="pmSub"></small></div></div>
   <div class="hint" id="hint" hidden></div>
   <button class="fab" id="me" aria-label="Show my location" title="My location">◎</button>
   <button class="fab rep-fab" id="repBtn" aria-label="Report" title="Report">⚠️</button>
@@ -101,14 +103,14 @@
 </div>
 
 <div id="pauseTop"><b data-i18n="pm_title">Map</b><span id="pmCity"></span><small data-i18n="pm_hint">Drag the map under the cursor · tap to jump there</small><button id="pmLegendBtn" data-i18n="legend">Legend</button><button id="pmClose" aria-label="Close">✕</button></div>
-<div id="pmBar">
-  <div id="pmQuick"><span data-i18n="qg_title">Quick GPS</span><button data-ty="fuel">⛽ <i data-i18n="ty_fuel">Petrol</i></button><button data-ty="police">🚓 <i data-i18n="ty_police">Police</i></button><button data-ty="hospital">🏥 <i data-i18n="ty_hospital">Hospital</i></button><button data-ty="atm">₹ <i data-i18n="ty_atm">ATM</i></button></div>
-  <div id="pmTrip" hidden></div>
-  <div class="pm-row"><span id="pmIcon" hidden></span><div class="pm-txt"><b id="pmName"></b><small id="pmSub"></small></div>
-    <button id="pmClear" hidden data-i18n="pm_clear">Remove waypoint</button><button id="pmSet" data-i18n="pm_set">📍 Set waypoint</button></div>
+<div id="pmBL"><div id="pmTrip" hidden></div><div id="pmScale"><div><span>0</span><span id="pmScaleTxt"></span></div><i id="pmScaleBar"></i></div><div id="pmArea"></div></div>
+<div id="pmHints">
+  <div id="pmQuick"><span data-i18n="qg_title">Quick GPS</span><button data-ty="fuel"><i data-i18n="ty_fuel">Petrol</i><kbd>⛽</kbd></button><button data-ty="police"><i data-i18n="ty_police">Police</i><kbd>🚓</kbd></button><button data-ty="hospital"><i data-i18n="ty_hospital">Hospital</i><kbd>🏥</kbd></button><button data-ty="atm"><i data-i18n="ty_atm">ATM</i><kbd>₹</kbd></button></div>
+  <div class="pm-keys"><button id="pmZoom"><i data-i18n="pm_zoom">Zoom</i><kbd data-z="-1">−</kbd><kbd data-z="1">+</kbd></button><button id="pmClear" hidden><i data-i18n="pm_clear">Remove</i><kbd>✕</kbd></button><button id="pmSet"><i data-i18n="pm_wp">Waypoint</i><kbd>↵</kbd></button></div>
 </div>
 <aside id="legend"><div class="lg-head" data-i18n="legend">Legend</div><div id="legendList"></div></aside>
 <div id="ask" hidden><span id="askText"></span><div><button id="askYes" data-i18n="ask_yes">Yes, light</button><button id="askNo" data-i18n="ask_no">No</button></div></div>
+<div id="radarDist"></div><div id="streetName"></div>
 <div id="hudBars" aria-hidden="true"><b><i id="barProg"></i></b><b><i id="barSpd"></i></b></div>
 <div id="navTop" class="navui">
   <div class="arrow" id="navArrow">↑</div>
@@ -140,8 +142,8 @@
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 <script src="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.js"></script>
 <script src="https://unpkg.com/@maplibre/maplibre-gl-leaflet@0.0.22/leaflet-maplibre-gl.js"></script>
-<script src="js/i18n.js?v=29"></script>
-<script src="js/core.js?v=29"></script>
-<script src="js/app.js?v=29"></script>
+<script src="js/i18n.js?v=30"></script>
+<script src="js/core.js?v=30"></script>
+<script src="js/app.js?v=30"></script>
 </body>
 </html>
