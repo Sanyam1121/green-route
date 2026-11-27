@@ -136,7 +136,9 @@ var Core = (function () {
     if (!o.realSp[info & 15]) return false;
     const who = o.who || 'car';
     if ((info & 64) && who !== 'walk') return false;
-    if (who === 'car') { if (info & 160) return false; const wc = (info >> 10) & 63; return !(o.narrowBlock && wc && wc < 7); } // under 3.5 m: no cars
+    // widths are measured wall to wall, which is wider than the space a car really gets (drains, steps, parked bikes):
+    // under 5 m between buildings counts as too narrow for a car
+    if (who === 'car') { if (info & 160) return false; const wc = (info >> 10) & 63; return !(o.narrowBlock && wc && wc < 10); }
     if (who === 'bike') return !(info & 128);
     if (who === 'cycle') return !(info & 256);
     return !(info & 512);
@@ -224,7 +226,12 @@ var Core = (function () {
         let c = short ? len : len / cs[info & 15];
         if (info & GAP) { if (gapCost === Infinity) continue; c += (info & 15) <= 1 ? gapCost * 3 : gapCost; } // highways: few real gaps
         if (car && (info & 16)) c *= nf;
-        if (car) { const wc = (info >> 10) & 63; if (wc && wc < 10) c *= 1.5; } // 3.5–5 m: slow, one car at a time
+        if (car) {
+          if (o.noCar && o.noCar.has(u * N + v)) continue; // marked "too narrow for cars" by people
+          const wc = (info >> 10) & 63, cl = info & 15;
+          if (wc) { if (wc < 14) c *= 2; } // 5–7 m between buildings: one car at a time, slow
+          else if (cl === 7) c *= 1.8; else if (cl === 8) c *= 1.5; else if (cl === 6 || cl === 9) c *= 1.25; // width unknown: lanes are a gamble
+        }
         const zv = zone[v];
         if (zv >= 0 && zv !== zu) c += short ? 1 : P;
         if (pen && pen[v]) c += short ? pen[v] / 10 : pen[v];
@@ -247,7 +254,7 @@ var Core = (function () {
         len += a[j + 1]; time += a[j + 1] / realSp[f & 15];
         if ((f & 15) >= 5) small += a[j + 1];
         if ((f & 15) >= 10) r_paths += a[j + 1];
-        const wc = (f >> 10) & 63, isTight = wc > 0 && wc < 10;
+        const wc = (f >> 10) & 63, isTight = wc > 0 && wc < 12;
         if (isTight) { tight += a[j + 1]; minW = Math.min(minW, wc / 2); if (!prevTight) tightAt.push([k, wc / 2]); }
         prevTight = isTight;
         if (f & 16) narrow += a[j + 1];

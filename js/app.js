@@ -70,7 +70,7 @@
   function setBase() {
     if (baseLayer) map.removeLayer(baseLayer);
     baseLayer = gameOn()
-      ? L.maplibreGL({ style: 'styles/game.json?v=27', updateInterval: 0, attribution: '&copy; <a href="https://openfreemap.org">OpenFreeMap</a> &copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>' })
+      ? L.maplibreGL({ style: 'styles/game.json?v=28', updateInterval: 0, attribution: '&copy; <a href="https://openfreemap.org">OpenFreeMap</a> &copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>' })
       : L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 19, attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>' });
     if (baseLayer._roundPoint) baseLayer._roundPoint = p => p; // sub-pixel placement keeps the basemap glued to the route line
     baseLayer.addTo(map);
@@ -84,17 +84,20 @@
   const GPS = '#c34dff';
   function drawLine(ll, color, on, layer, click) {
     if (gameOn()) {
+      const parts = [];
       if (on) {
-        L.polyline(ll, { color: GPS, weight: 18, opacity: .22, interactive: false }).addTo(layer);
-        L.polyline(ll, { color: '#0b0f12', weight: 9, opacity: .9, interactive: false }).addTo(layer);
+        parts.push(L.polyline(ll, { color: GPS, weight: 18, opacity: .22, interactive: false }).addTo(layer));
+        parts.push(L.polyline(ll, { color: '#0b0f12', weight: 9, opacity: .9, interactive: false }).addTo(layer));
       }
       const l = L.polyline(ll, { color: on ? GPS : color, weight: on ? 6 : 3.5, opacity: on ? 1 : .45 }).addTo(layer);
       if (click) l.on('click', click);
+      parts.push(l); l._grParts = parts;
       return l;
     }
-    L.polyline(ll, { color: '#fff', weight: on ? 11 : 6, opacity: on ? .95 : .6, interactive: false }).addTo(layer);
+    const casing = L.polyline(ll, { color: '#fff', weight: on ? 11 : 6, opacity: on ? .95 : .6, interactive: false }).addTo(layer);
     const l = L.polyline(ll, { color, weight: on ? 7 : 4, opacity: on ? 1 : .55 }).addTo(layer);
     if (click) l.on('click', click);
+    l._grParts = [casing, l];
     return l;
   }
   let mA = null, mB = null;
@@ -141,6 +144,7 @@
     if (!area) try { const wj = await getJSON(`data/v3/${name}-widths.json`); if (wj.roads_updated === c.updated) widths = wj.w; } catch (e) { }
     const g = Core.build(c, widths); Z = null; G = g; liveArea = area || null;
     applySignals(); drawCams(); loadReports(); drawWidths(); drawChowks();
+    buildNoCar();
     if (!area) { pollCommunity(); sendOldFixes(); }
     if (!A || !B) idle();
     if (A && B) go();
@@ -263,7 +267,7 @@
     const sp = speeds(false, when), car = opt.vehicle === 'car';
     // divider gaps cost a wait (crossing traffic / U-turn); off in Settings if they cause bad routes
     const gapPen = { car: 30, bike: 15, cycle: 10, walk: 5 }[opt.vehicle] ?? 30;
-    const base = { who: opt.vehicle, realSp: sp, narrowFactor: car ? 2.5 : 1, pen: car ? pen.car : pen.bike, block, narrowBlock: car && !relaxNarrow, gapPen, noGaps: !opt.gaps };
+    const base = { who: opt.vehicle, realSp: sp, narrowFactor: car ? 2.5 : 1, pen: car ? pen.car : pen.bike, block, narrowBlock: car && !relaxNarrow, gapPen, noGaps: !opt.gaps, noCar: car && noCar.size ? noCar : null };
     if (mode === 'short') return { ...base, mode: 'short', costSp: sp };
     if (mode === 'few') return { ...base, mode: 'time', P: 900, costSp: sp };
     if (mode === 'gali') return { ...base, mode: 'time', P: lightWait() * 1.5, costSp: speeds(true, when) };
@@ -878,6 +882,7 @@
       const a = nav.aShown, p = routePoint(r, a);
       me.disp = me.target = L.latLng(p[0], p[1]); me.from = null;
       nav.lookHead = routeBearing(r, a, a + 45);
+      trimNavLine(a);
       me.head = angLerp(me.head, routeBearing(r, a - 6, a + 8), 1 - Math.exp(-dt / 160));
       busy = (nav.v || 0) > 0.3 || Math.abs(err) > 0.3;
     } else if (me.target) {
@@ -906,7 +911,11 @@
     if (me.disp && following() && !zoomingNow && pointers.size < 2) {
       const c = map.layerPointToContainerPoint(layerPt(me.disp)), s = map.getSize(), dx = c.x - s.x / 2, dy = c.y - s.y / 2;
       if (Math.abs(dx) + Math.abs(dy) > s.x) map.setView(me.disp, map.getZoom(), { animate: false });
-      else if (Math.abs(dx) > 0.02 || Math.abs(dy) > 0.02) camPan(dx, dy);
+      else if (Math.abs(dx) > 0.02 || Math.abs(dy) > 0.02) {
+        // far off (just re-centred): glide back instead of jumping; close: stay exactly on the arrow
+        const far = Math.hypot(dx, dy) > 4, k = far ? 1 - Math.exp(-dt / 220) : 1;
+        camPan(dx * k, dy * k); if (far) busy = true;
+      }
     }
     if (meMarker) { meMarker._latlng = me.disp; if (meMarker._icon && !zoomingNow) L.DomUtil.setPosition(meMarker._icon, layerPt(me.disp)); }
     if (applyCamera(dt)) busy = true;
@@ -917,7 +926,7 @@
   // zoom state: the camera waits while Leaflet animates a zoom or the user pinches
   let zoomingNow = false, zoomT = 0;
   const pointers = new Map();
-  map.on('zoomstart', () => { zoomingNow = true; clearTimeout(zoomT); });
+  map.on('zoomstart', () => { zoomingNow = true; clearTimeout(zoomT); zoomT = setTimeout(() => { zoomingNow = false; startLoop(); }, 1500); }); // failsafe if zoomend never comes
   map.on('zoomend', () => { clearTimeout(zoomT); zoomT = setTimeout(() => { zoomingNow = false; startLoop(); }, 60); });
   // while following, zooming (pinch, wheel, double-tap) keeps you in the middle instead of fighting the camera
   function zoomAround() {
@@ -988,9 +997,9 @@
   wrapEl.addEventListener('pointermove', e => {
     const pt = pointers.get(e.pointerId); if (!pt || pointers.size > 1) return;
     if (!pt.moved) {
-      if (Math.hypot(e.clientX - pt.x, e.clientY - pt.y) < 10) return;
+      if (Math.hypot(e.clientX - pt.x, e.clientY - pt.y) < 18) return; // a small slip of the thumb isn't a drag
       pt.moved = true; pt.lx = e.clientX; pt.ly = e.clientY;
-      if (nav && nav.follow) { nav.follow = false; $('navCenter').hidden = false; startLoop(); }
+      if (nav && nav.follow) { nav.follow = false; $('navCenter').hidden = false; lastTouch = Date.now(); startLoop(); }
       else if (!nav && (me.mode === 'follow' || me.mode === 'compass')) { me.mode = 'free'; drawMeBtn(); startLoop(); }
       return;
     }
@@ -999,7 +1008,16 @@
     const a = me.mapRot * Math.PI / 180, mx = dx * Math.cos(a) - dy * Math.sin(a), my = dx * Math.sin(a) + dy * Math.cos(a);
     camPan(-mx, -my);
   });
-  const pointerUp = e => { pointers.delete(e.pointerId); if (!pointers.size) startLoop(); };
+  const pointerUp = e => { pointers.delete(e.pointerId); lastTouch = Date.now(); if (!pointers.size) startLoop(); };
+  // looked around while driving? the map comes back to you 8 s after your last touch (pinch-zoom alone doesn't let go)
+  let lastTouch = 0;
+  setInterval(() => {
+    if (!nav || nav.follow || paused() || pointers.size || Date.now() - lastTouch < 8000) return;
+    nav.follow = true; $('navCenter').hidden = true; camState = ''; startLoop();
+  }, 1000);
+  // safety: a gesture the browser cut short must never leave the camera thinking a finger is still down
+  addEventListener('touchend', e => { if (!e.touches.length && pointers.size) { pointers.clear(); startLoop(); } }, { passive: true });
+  addEventListener('blur', () => { pointers.clear(); });
   wrapEl.addEventListener('pointerup', pointerUp); wrapEl.addEventListener('pointercancel', pointerUp); wrapEl.addEventListener('pointerleave', pointerUp);
   // ◎ button: off → follow me → compass → off
   function startLive() {
@@ -1052,8 +1070,12 @@
     nav.said = new Set();
     routeLayer.clearLayers();
     const ll = r.path.map(i => [G.lat[i], G.lon[i]]);
-    nav.line = drawLine(ll, MODES[nav.mode].color, true, routeLayer);
-    for (const z of new Set(r.signals)) { const c = Z.clusters[z]; L.circleMarker([c.lat, c.lon], { radius: 8, color: '#fff', weight: 2, fillColor: c.kind === 'sure' ? '#e5383b' : '#f2a516', fillOpacity: 1, interactive: false }).addTo(routeLayer); }
+    nav.line = drawLine(ll, MODES[nav.mode].color, true, routeLayer); trimAt = -1;
+    nav.sigMarks = [];
+    for (const z of new Set(r.signals)) {
+      const c = Z.clusters[z], m = L.circleMarker([c.lat, c.lon], { radius: 8, color: '#fff', weight: 2, fillColor: c.kind === 'sure' ? '#e5383b' : '#f2a516', fillOpacity: 1, interactive: false }).addTo(routeLayer);
+      nav.sigMarks.push({ m, at: Core.project(G, r, c.lat, c.lon, 0).along, on: true });
+    }
   }
   async function startNav() {
     const r = results[sel]; if (!r) return;
@@ -1102,8 +1124,14 @@
     if (nav.follow && map.getZoom() < 16) map.setZoom(17, { animate: false });
     // off route → find a new route from here
     if (pr.off > 45 && acc < 60) nav.off++; else nav.off = 0;
+    if (!nav.snap) trimNavLine(pr.along);
     if ((nav.off >= 2 || pr.off > 90) && Date.now() - nav.lastReroute > 8000) {
       nav.lastReroute = Date.now();
+      // skipped a gali we sent you into? ask if it was too narrow for the car
+      if (opt.vehicle === 'car' && nav.steps) {
+        const st = nav.steps.find(x => x.gali && x.at > pr.along - 60 && x.at < pr.along + 80);
+        if (st) { const r0 = nav.r, i = r0.path[Math.min(st.k + 1, r0.path.length - 1)], j = r0.path[Math.min(st.k + 2, r0.path.length - 1)]; askNarrow((G.lat[i] + G.lat[j]) / 2, (G.lon[i] + G.lon[j]) / 2); }
+      }
       const s = Core.nearest(G, la, lo, Core.usable(G, routeOpts(nav.mode)));
       const r = s && Core.route(G, Z, s.i, B ? ends(B, Core.usable(G, routeOpts(nav.mode)), nav.mode) : results._dst, routeOpts(nav.mode));
       if (r) { speak(t('v_reroute')); setNavRoute(r); return onPos(p); }
@@ -1445,10 +1473,10 @@
       for (const ln of (await r.text()).split('\n')) {
         let m, d; try { m = JSON.parse(ln); d = JSON.parse(m.message); } catch (e) { continue; }
         if (m.event !== 'message' || m.time <= (community.since || 0)) continue;
-        if ((d.t === 'light' || d.t === 'nolight') && typeof d.la === 'number' && typeof d.lo === 'number' && inCity(d.la, d.lo)) out.push(d);
+        if (['light', 'nolight', 'narrow', 'wide'].includes(d.t) && typeof d.la === 'number' && typeof d.lo === 'number' && inCity(d.la, d.lo)) out.push(d);
       }
       const changed = out.length !== commRecent.length; commRecent = out;
-      if (changed && G) { applySignals(); if (A && B && !nav) go(); }
+      if (changed && G) { applySignals(); buildNoCar(); if (A && B && !nav) go(); }
     } catch (e) { }
   }
   // marks within 40 m of each other are the same junction; add up their votes
@@ -1456,7 +1484,7 @@
     const groups = [];
     const addVote = (la, lo, y, n) => { const g = groups.find(g => Core.hav(g[0], g[1], la, lo) < 40); if (g) { g[2] += y; g[3] += n; } else groups.push([la, lo, y, n]); };
     for (const [la, lo, y, n] of community.l || []) addVote(la, lo, y, n);
-    for (const d of commRecent) addVote(d.la, d.lo, d.t === 'light' ? 1 : 0, d.t === 'nolight' ? 1 : 0);
+    for (const d of commRecent) if (d.t === 'light' || d.t === 'nolight') addVote(d.la, d.lo, d.t === 'light' ? 1 : 0, d.t === 'nolight' ? 1 : 0);
     return { add: groups.filter(g => g[2] > g[3]).map(g => [g[0], g[1]]), del: groups.filter(g => g[3] > g[2]).map(g => [g[0], g[1]]) };
   }
   function postLight(kind, la, lo) {
@@ -1502,7 +1530,12 @@
     const div = document.createElement('div'); div.className = 'pop';
     div.innerHTML = `<b>${esc(j ? placeName(j.la, j.lo) : t('no_junction'))}</b>` +
       (c ? `<button data-a="off">${esc(t('no_light_here'))}</button>` : '') + (j && !(c && c.kind === 'sure') ? `<button data-a="on">🚦 ${esc(t('light_here'))}</button>` : '');
-    div.onclick = ev => { const a = ev.target.dataset.a; if (!a) return; map.closePopup(); markLight(a === 'on', e.latlng.lat, e.latlng.lng); };
+    const ed = nearestEdge(e.latlng.lat, e.latlng.lng, 25);
+    if (ed) div.innerHTML += isNoCarAt(e.latlng.lat, e.latlng.lng) ? `<button data-a="wide">✅ ${esc(t('cars_ok'))}</button>` : `<button data-a="narrow">🚫 ${esc(t('too_narrow'))}</button>`;
+    div.onclick = ev => {
+      const a = ev.target.dataset.a; if (!a) return; map.closePopup();
+      if (a === 'narrow' || a === 'wide') markNarrow(a === 'narrow', e.latlng.lat, e.latlng.lng); else markLight(a === 'on', e.latlng.lat, e.latlng.lng);
+    };
     L.popup().setLatLng(j ? [j.la, j.lo] : e.latlng).setContent(div).openOn(map);
   });
   // paste: coordinates, Google Maps links or 31°19'32"N 75°34'45"E — one light per line
@@ -1557,9 +1590,18 @@
     if (nav && nav.r && Core.hav(la, lo, G.lat[nav.r.path[nav.r.path.length - 1]], G.lon[nav.r.path[nav.r.path.length - 1]]) < 120) return; // arriving, not a light
     asked.add(j.i);
     $('askText').textContent = t('ask_light', { c: placeName(j.la, j.lo) });
+    $('askYes').textContent = t('ask_yes'); $('askNo').textContent = t('ask_no');
     $('ask').hidden = false; clearTimeout(askTimer); askTimer = setTimeout(() => { $('ask').hidden = true; }, 15000);
     $('askYes').onclick = () => { $('ask').hidden = true; setLight(true, j.la, j.lo); applySignals(); toast(t('light_marked', { c: placeName(j.la, j.lo) })); };
     $('askNo').onclick = () => { $('ask').hidden = true; if (c) { setLight(false, j.la, j.lo); applySignals(); } };
+  }
+  function askNarrow(la, lo) {
+    if (isNoCarAt(la, lo)) return;
+    $('askText').textContent = t('ask_narrow');
+    $('askYes').textContent = '🚫 ' + t('ask_narrow_yes'); $('askNo').textContent = t('ask_no');
+    $('ask').hidden = false; clearTimeout(askTimer); askTimer = setTimeout(() => { $('ask').hidden = true; }, 15000);
+    $('askYes').onclick = () => { $('ask').hidden = true; markNarrow(true, la, lo, true); toast(t('narrow_marked')); };
+    $('askNo').onclick = () => { $('ask').hidden = true; };
   }
   // marks made before sharing existed: send them once
   function sendOldFixes() {
@@ -1569,6 +1611,86 @@
     store.set(key, 1);
   }
   setInterval(() => { if (G && navigator.onLine) pollCommunity(); }, 180000);
+
+  /* ---------------- streets too narrow for cars (marked by people, shared) ---------------- */
+  // nearest street segment to a point
+  function nearestEdge(la, lo, max = 25) {
+    if (!G) return null;
+    const cx = Math.cos(la * Math.PI / 180), dl = max / 111000 * 2, dlo = dl / cx;
+    let best = null, bd = max;
+    for (let u = 0; u < G.N; u++) {
+      if (Math.abs(G.lat[u] - la) > dl || Math.abs(G.lon[u] - lo) > dlo) continue;
+      const a = G.adj[u];
+      for (let k = 0; k < a.length; k += 3) {
+        const v = a[k]; if (v < u || (a[k + 2] & Core.GAP)) continue;
+        const ax = G.lon[u] * cx, ay = G.lat[u], dx = G.lon[v] * cx - ax, dy = G.lat[v] - ay, L2 = dx * dx + dy * dy; if (!L2) continue;
+        const tt = Math.max(0, Math.min(1, ((lo * cx - ax) * dx + (la - ay) * dy) / L2));
+        const d = Core.hav(la, lo, ay + tt * dy, (ax + tt * dx) / cx); if (d < bd) { bd = d; best = { u, v, m: d, la: ay + tt * dy, lo: (ax + tt * dx) / cx }; }
+      }
+    }
+    return best;
+  }
+  // the whole street between the junctions at either end of an edge
+  function streetChain(u, v) {
+    const edges = [[u, v]];
+    const walk = (from, at) => {
+      for (let n = 0; n < 80 && G.deg[at] === 2; n++) {
+        const a = G.adj[at]; let next = -1;
+        for (let k = 0; k < a.length; k += 3) if (a[k] !== from && !(a[k + 2] & Core.GAP)) { next = a[k]; break; }
+        if (next < 0) break; edges.push([at, next]); from = at; at = next;
+      }
+    };
+    walk(u, v); walk(v, u);
+    return edges;
+  }
+  let noCar = new Set(), narrowLines = [];
+  function buildNoCar() {
+    noCar = new Set(); narrowLines = [];
+    if (!G) return;
+    const groups = [];
+    const vote = (la, lo, y, n) => { const g = groups.find(g => Core.hav(g[0], g[1], la, lo) < 15); if (g) { g[2] += y; g[3] += n; } else groups.push([la, lo, y, n]); };
+    for (const [la, lo, y, n] of community.n || []) vote(la, lo, y, n);
+    for (const d of commRecent) if (d.t === 'narrow' || d.t === 'wide') vote(d.la, d.lo, d.t === 'narrow' ? 1 : 0, d.t === 'wide' ? 1 : 0);
+    for (const [la, lo] of fixes.narrow || []) vote(la, lo, 1000, 0);
+    for (const [la, lo] of fixes.wide || []) vote(la, lo, 0, 1000);
+    for (const [la, lo, y, n] of groups) {
+      if (y <= n) continue;
+      const e = nearestEdge(la, lo, 20); if (!e) continue;
+      const ch = streetChain(e.u, e.v);
+      for (const [a, b] of ch) { noCar.add(a * G.N + b); noCar.add(b * G.N + a); }
+      narrowLines.push(ch.map(([a]) => [G.lat[a], G.lon[a]]).concat([[G.lat[ch[ch.length - 1][1]], G.lon[ch[ch.length - 1][1]]]]));
+    }
+    drawNarrow();
+  }
+  const narrowLayer = L.layerGroup().addTo(map);
+  function drawNarrow() {
+    narrowLayer.clearLayers();
+    if (opt.vehicle !== 'car') return;
+    for (const ll of narrowLines) L.polyline(ll, { color: '#e5383b', weight: 4, opacity: .85, dashArray: '1 7', lineCap: 'round', interactive: false }).addTo(narrowLayer);
+  }
+  function markNarrow(narrow, la, lo, quiet) {
+    const e = nearestEdge(la, lo, 25); if (!e) { if (!quiet) toast(t('no_street')); return false; }
+    fixes.narrow = (fixes.narrow || []).filter(([a, o]) => Core.hav(a, o, e.la, e.lo) >= 15);
+    fixes.wide = (fixes.wide || []).filter(([a, o]) => Core.hav(a, o, e.la, e.lo) >= 15);
+    (narrow ? fixes.narrow : fixes.wide).push([+e.la.toFixed(6), +e.lo.toFixed(6)]);
+    store.set('gr-fixes', fixes); postLight(narrow ? 'narrow' : 'wide', e.la, e.lo);
+    buildNoCar(); if (A && B && !nav) go();
+    if (!quiet) toast(narrow ? t('narrow_marked') : t('wide_marked'));
+    return true;
+  }
+  const isNoCarAt = (la, lo) => { const e = nearestEdge(la, lo, 25); return !!(e && noCar.has(e.u * G.N + e.v)); };
+
+  /* ---------------- navigation: line shrinks behind you ---------------- */
+  let trimAt = -1;
+  function trimNavLine(a) {
+    if (!nav || !nav.line || !nav.r) return;
+    if (Math.abs(a - trimAt) < 1.5) return; trimAt = a;
+    const r = nav.r, cum = r.cum, n = r.path.length;
+    let lo = 0, hi = n - 1; while (hi - lo > 1) { const m = (lo + hi) >> 1; if (cum[m] <= a) lo = m; else hi = m; }
+    const ll = [routePoint(r, a)]; for (let i = lo + 1; i < n; i++) ll.push([G.lat[r.path[i]], G.lon[r.path[i]]]);
+    for (const pl of nav.line._grParts || [nav.line]) pl.setLatLngs(ll);
+    for (const s of nav.sigMarks || []) if (s.on && s.at < a - 15) { routeLayer.removeLayer(s.m); s.on = false; }
+  }
 
   /* ---------------- street width layer ---------------- */
   map.createPane('widths'); map.getPane('widths').style.zIndex = 350; // under routes and markers
@@ -1694,7 +1816,7 @@
     $('widths').checked = opt.widths; $('chowksOn').checked = opt.chowks; $('blipsOn').checked = opt.blips; $('gapsOn').checked = opt.gaps; $('rotateOn').checked = opt.rotate; $('tiltOn').checked = opt.tilt;
     $('voice').checked = opt.voice; $('likely').checked = opt.likely; $('wait').value = opt.wait; $('wv').textContent = opt.wait + ' s';
   }
-  $('vehSeg').onclick = e => { const b = e.target.closest('button'); if (!b) return; opt.vehicle = b.dataset.v; saveOpt(); drawOpts(); go(); };
+  $('vehSeg').onclick = e => { const b = e.target.closest('button'); if (!b) return; opt.vehicle = b.dataset.v; saveOpt(); drawOpts(); drawNarrow(); go(); };
   $('trSel').onchange = () => { opt.traffic = $('trSel').value; saveOpt(); go(); };
   $('citySel').onchange = () => switchCity($('citySel').value);
   $('langSel').onchange = () => { opt.lang = $('langSel').value; saveOpt(); applyLang(); };

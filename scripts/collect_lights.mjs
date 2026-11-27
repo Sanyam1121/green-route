@@ -14,7 +14,8 @@ const pad = 0.05;
 for (const [city, [s, w, n, e]] of Object.entries(CITIES)) {
   const file = `data/v3/${city}-lights.json`;
   const old = existsSync(file) ? JSON.parse(readFileSync(file, 'utf8')) : { since: 0, l: [] };
-  const map = new Map(old.l.map(x => [x[0].toFixed(5) + ',' + x[1].toFixed(5), x])); // [lat, lon, yes, no]
+  const map = new Map(old.l.map(x => [x[0].toFixed(5) + ',' + x[1].toFixed(5), x])); // lights: [lat, lon, yes, no]
+  const nmap = new Map((old.n || []).map(x => [x[0].toFixed(5) + ',' + x[1].toFixed(5), x])); // too narrow for cars: [lat, lon, yes, no]
   let since = old.since || 0, added = 0;
   let text = '';
   try {
@@ -25,15 +26,16 @@ for (const [city, [s, w, n, e]] of Object.entries(CITIES)) {
   for (const line of text.split('\n')) {
     let m, d; try { m = JSON.parse(line); d = JSON.parse(m.message); } catch { continue; }
     if (m.event !== 'message' || m.time <= old.since) continue;
-    if ((d.t !== 'light' && d.t !== 'nolight') || typeof d.la !== 'number' || typeof d.lo !== 'number') continue;
+    if (!['light', 'nolight', 'narrow', 'wide'].includes(d.t) || typeof d.la !== 'number' || typeof d.lo !== 'number') continue;
     if (d.la < s - pad || d.la > n + pad || d.lo < w - pad || d.lo > e + pad) continue;
     const la = +d.la.toFixed(6), lo = +d.lo.toFixed(6), k = la.toFixed(5) + ',' + lo.toFixed(5);
-    const x = map.get(k) || [la, lo, 0, 0];
-    if (d.t === 'light') x[2]++; else x[3]++;
-    map.set(k, x); added++; since = Math.max(since, m.time);
+    const mm = d.t === 'narrow' || d.t === 'wide' ? nmap : map, x = mm.get(k) || [la, lo, 0, 0];
+    if (d.t === 'light' || d.t === 'narrow') x[2]++; else x[3]++;
+    mm.set(k, x); added++; since = Math.max(since, m.time);
   }
   if (!added && existsSync(file)) { console.log(`${city}: no new marks`); continue; }
   const l = [...map.values()];
-  writeFileSync(file, JSON.stringify({ updated: new Date().toISOString(), since, l }));
-  console.log(`${city}: ${added} new marks, ${l.filter(x => x[2] > x[3]).length} lights, ${l.filter(x => x[3] > x[2]).length} marked "no light"`);
+  const nl = [...nmap.values()];
+  writeFileSync(file, JSON.stringify({ updated: new Date().toISOString(), since, l, n: nl }));
+  console.log(`${city}: ${added} new marks, ${l.filter(x => x[2] > x[3]).length} lights, ${nl.filter(x => x[2] > x[3]).length} streets too narrow for cars`);
 }
