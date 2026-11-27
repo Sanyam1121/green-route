@@ -69,7 +69,7 @@
   function setBase() {
     if (baseLayer) map.removeLayer(baseLayer);
     baseLayer = gameOn()
-      ? L.maplibreGL({ style: 'styles/game.json?v=22', updateInterval: 0, attribution: '&copy; <a href="https://openfreemap.org">OpenFreeMap</a> &copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>' })
+      ? L.maplibreGL({ style: 'styles/game.json?v=23', updateInterval: 0, attribution: '&copy; <a href="https://openfreemap.org">OpenFreeMap</a> &copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>' })
       : L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 19, attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>' });
     if (baseLayer._roundPoint) baseLayer._roundPoint = p => p; // sub-pixel placement keeps the basemap glued to the route line
     baseLayer.addTo(map);
@@ -816,6 +816,8 @@
     return [G.lat[i] + (G.lat[j] - G.lat[i]) * f, G.lon[i] + (G.lon[j] - G.lon[i]) * f];
   }
   const routeBearing = (r, a, b) => { const p = routePoint(r, a), q = routePoint(r, b); return (Core.bearing(p[0], p[1], q[0], q[1]) + 360) % 360; };
+  // Leaflet's latLngToLayerPoint rounds to whole pixels (that made the camera step 1 px at a time); this one doesn't
+  const layerPt = ll => map.project(ll).subtract(map.getPixelOrigin());
   // camera pan by a sub-pixel amount without the full Leaflet "moveend" redraw every frame
   let panAcc = 0, moveEndT = 0;
   function syncGL() { const b = baseLayer; if (b && b._glMap && b._update) try { b._update(); b._glMap.redraw(); } catch (e) { } }
@@ -868,11 +870,11 @@
     me.mapRot = angLerp(me.mapRot, want, 1 - Math.exp(-dt / tau));
     if (angDist(want, me.mapRot) > 0.05) busy = true; else me.mapRot = want;
     if (me.disp && following() && !zoomingNow && pointers.size < 2) {
-      const c = map.latLngToContainerPoint(me.disp), s = map.getSize(), dx = c.x - s.x / 2, dy = c.y - s.y / 2;
+      const c = map.layerPointToContainerPoint(layerPt(me.disp)), s = map.getSize(), dx = c.x - s.x / 2, dy = c.y - s.y / 2;
       if (Math.abs(dx) + Math.abs(dy) > s.x) map.setView(me.disp, map.getZoom(), { animate: false });
       else if (Math.abs(dx) > 0.02 || Math.abs(dy) > 0.02) camPan(dx, dy);
     }
-    if (meMarker) { meMarker._latlng = me.disp; if (meMarker._icon && !zoomingNow) L.DomUtil.setPosition(meMarker._icon, map.latLngToLayerPoint(me.disp)); }
+    if (meMarker) { meMarker._latlng = me.disp; if (meMarker._icon && !zoomingNow) L.DomUtil.setPosition(meMarker._icon, layerPt(me.disp)); }
     if (applyCamera(dt)) busy = true;
     const el = meMarker && meMarker._icon, d = el && el.querySelector('.me');
     if (d) { d.style.setProperty('--h', (me.head || 0) + 'deg'); d.classList.toggle('dir', me.head != null); }
