@@ -69,7 +69,7 @@
   function setBase() {
     if (baseLayer) map.removeLayer(baseLayer);
     baseLayer = gameOn()
-      ? L.maplibreGL({ style: 'styles/game.json?v=19', attribution: '&copy; <a href="https://openfreemap.org">OpenFreeMap</a> &copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>' })
+      ? L.maplibreGL({ style: 'styles/game.json?v=20', attribution: '&copy; <a href="https://openfreemap.org">OpenFreeMap</a> &copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>' })
       : L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 19, attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>' });
     baseLayer.addTo(map);
     document.body.classList.toggle('game', gameOn());
@@ -819,8 +819,21 @@
     applyCamera();
     const el = meMarker && meMarker.getElement && meMarker.getElement(), d = el && el.querySelector('.me');
     if (d) { d.style.setProperty('--h', (me.head || 0) + 'deg'); d.classList.toggle('dir', me.head != null); }
-    if (me.target && following()) map.setView(me.disp, map.getZoom(), { animate: false });
+    if (me.target && following() && !zoomingNow && pointers.size < 2) {
+      const c = map.latLngToContainerPoint(me.disp), s = map.getSize();
+      if (Math.abs(c.x - s.x / 2) > 0.5 || Math.abs(c.y - s.y / 2) > 0.5) map.setView(me.disp, map.getZoom(), { animate: false });
+    }
     if (busy || (me.target && following() && rotating())) rafId = requestAnimationFrame(frame);
+  }
+  // zoom state: the camera waits while Leaflet animates a zoom or the user pinches
+  let zoomingNow = false, zoomT = 0;
+  const pointers = new Map();
+  map.on('zoomstart', () => { zoomingNow = true; clearTimeout(zoomT); });
+  map.on('zoomend', () => { clearTimeout(zoomT); zoomT = setTimeout(() => { zoomingNow = false; startLoop(); }, 60); });
+  // while following, zooming (pinch, wheel, double-tap) keeps you in the middle instead of fighting the camera
+  function zoomAround() {
+    const c = following() ? 'center' : true;
+    map.options.touchZoom = c; map.options.scrollWheelZoom = c; map.options.doubleClickZoom = c;
   }
   // heading-up rotation and 3D tilt: the map sits in an oversized square (#rot) that we turn with CSS
   const rotEl = $('rot'), wrapEl = $('mapwrap');
@@ -830,7 +843,8 @@
     const on = off0 > 0.05 || rotating() || tilting();
     const tilt = tilting();
     const state = (on ? 'r' : '') + (tilt ? 't' : '') + (document.body.classList.contains('radar') ? 'R' : '');
-    if (state !== camState) {
+    zoomAround();
+    if (state !== camState && !zoomingNow) {
       camState = state;
       document.body.classList.toggle('rotmap', on);
       document.body.classList.toggle('tilted', tilt);
@@ -846,9 +860,17 @@
   // touching the map while it follows/rotates hands control back to the user
   wrapEl.addEventListener('pointerdown', e => {
     if (e.target.closest('button,.leaflet-control,.leaflet-popup')) return;
+    pointers.set(e.pointerId, { x: e.clientX, y: e.clientY, moved: false });
+  });
+  wrapEl.addEventListener('pointermove', e => {
+    const pt = pointers.get(e.pointerId); if (!pt || pointers.size > 1 || pt.moved) return;
+    if (Math.hypot(e.clientX - pt.x, e.clientY - pt.y) < 12) return;
+    pt.moved = true;
     if (nav && nav.follow) { nav.follow = false; $('navCenter').hidden = false; startLoop(); }
     else if (!nav && (me.mode === 'follow' || me.mode === 'compass')) { me.mode = 'free'; drawMeBtn(); startLoop(); }
   });
+  const pointerUp = e => { pointers.delete(e.pointerId); if (!pointers.size) startLoop(); };
+  wrapEl.addEventListener('pointerup', pointerUp); wrapEl.addEventListener('pointercancel', pointerUp); wrapEl.addEventListener('pointerleave', pointerUp);
   // ◎ button: off → follow me → compass → off
   function startLive() {
     if (liveWatch != null || !navigator.geolocation) return;
@@ -1056,7 +1078,11 @@
     };
     L.popup({ offset: [0, -4] }).setLatLng([c.la, c.lo]).setContent(div).openOn(map);
   }
-  map.on('moveend zoomend', drawChowks);
+  // redraw once after the map settles (moveend also fires after every zoom)
+  // at most every ~0.4 s, always once more at the end; skipped while a zoom is animating
+  const settle = (fn, ms = 80) => { let tm = 0, last = 0; const run = () => { if (zoomingNow) { tm = setTimeout(run, 120); return; } last = Date.now(); tm = 0; fn(); };
+    return () => { if (tm) return; const wait = Math.max(ms, 400 - (Date.now() - last)); tm = setTimeout(run, wait); }; };
+  map.on('moveend', settle(drawChowks));
 
   /* ---------------- street width layer ---------------- */
   map.createPane('widths'); map.getPane('widths').style.zIndex = 350; // under routes and markers
@@ -1076,7 +1102,7 @@
       n++;
     }
   }
-  map.on('moveend zoomend', drawWidths);
+  map.on('moveend', settle(drawWidths, 120));
 
   /* ---------------- savings ---------------- */
   function weekKey(d = new Date()) { const x = new Date(d); x.setHours(0, 0, 0, 0); x.setDate(x.getDate() - ((x.getDay() + 6) % 7)); return x.toISOString().slice(0, 10); }
