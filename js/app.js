@@ -69,7 +69,7 @@
   function setBase() {
     if (baseLayer) map.removeLayer(baseLayer);
     baseLayer = gameOn()
-      ? L.maplibreGL({ style: 'styles/game.json', attribution: '&copy; <a href="https://openfreemap.org">OpenFreeMap</a> &copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>' })
+      ? L.maplibreGL({ style: 'styles/game.json?v=17', attribution: '&copy; <a href="https://openfreemap.org">OpenFreeMap</a> &copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>' })
       : L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 19, attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>' });
     baseLayer.addTo(map);
     document.body.classList.toggle('game', gameOn());
