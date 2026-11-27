@@ -289,3 +289,11 @@ body.pausemap #legend{display:block;position:fixed;z-index:1500;right:16px;top:8
   #pauseTop small{display:none}#pauseTop span{flex:1}
 }
 body.pausemap .leaflet-top{top:70px}
+
+/* ---------- offline (v25) ---------- */
+.offrow{display:flex;flex-direction:column;gap:6px;grid-column:1/-1;padding:10px 12px;border:1px solid var(--line);border-radius:12px}
+.offrow>small{opacity:.75}
+#offBox button{width:100%}
+.offbtns{display:flex;gap:8px}.offbtns button{flex:1}
+.offbar{height:8px;border-radius:4px;background:var(--line);overflow:hidden}.offbar i{display:block;height:100%;background:#2fb36a;transition:width .3s}
+body.offline .hint::before{content:"📴 "}

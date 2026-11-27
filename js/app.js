@@ -65,11 +65,12 @@
   // Base map: "game" = our own dark vector style (styles/game.json on OpenFreeMap tiles), "classic" = OpenStreetMap
   let baseLayer = null;
   const webgl = (() => { try { const c = document.createElement('canvas'); return !!(c.getContext('webgl2') || c.getContext('webgl')); } catch (e) { return false; } })();
-  const gameOn = () => opt.look === 'game' && webgl && !!L.maplibreGL;
+  // offline with this city saved: always use the vector map (that's what gets saved); the classic map needs the internet
+  const gameOn = () => (opt.look === 'game' || (!navigator.onLine && !!(store.get('gr-offline', {})[opt.city]))) && webgl && !!L.maplibreGL;
   function setBase() {
     if (baseLayer) map.removeLayer(baseLayer);
     baseLayer = gameOn()
-      ? L.maplibreGL({ style: 'styles/game.json?v=24', updateInterval: 0, attribution: '&copy; <a href="https://openfreemap.org">OpenFreeMap</a> &copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>' })
+      ? L.maplibreGL({ style: 'styles/game.json?v=25', updateInterval: 0, attribution: '&copy; <a href="https://openfreemap.org">OpenFreeMap</a> &copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>' })
       : L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 19, attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>' });
     if (baseLayer._roundPoint) baseLayer._roundPoint = p => p; // sub-pixel placement keeps the basemap glued to the route line
     baseLayer.addTo(map);
@@ -1322,6 +1323,81 @@
     if ((e.key === 'm' || e.key === 'M') && !e.ctrlKey && !e.metaKey && !e.altKey) paused() ? closePause() : openPause();
   }, true); // capture: Leaflet's keyboard handler would otherwise swallow Escape
 
+  /* ---------------- offline: save a whole city (map tiles, labels, roads, places) on the phone ---------------- */
+  const OFF_KEY = 'gr-offline';
+  let offInfo = store.get(OFF_KEY, {}); // { city: { at, bytes, n, urls: [...] } }
+  const TILEJSON = 'https://tiles.openfreemap.org/planet';
+  const FONTS = ['Noto Sans Bold', 'Noto Sans Italic'], RANGES = ['0-255', '256-511', '2304-2559', '2560-2815', '8192-8447'];
+  const tileXY = (la, lo, z) => { const n = 2 ** z, r = la * Math.PI / 180; return [Math.floor((lo + 180) / 360 * n), Math.floor((1 - Math.log(Math.tan(r) + 1 / Math.cos(r)) / Math.PI) / 2 * n)]; };
+  let offBusy = false;
+  async function downloadCity(city) {
+    if (offBusy) return; if (!('caches' in window)) { toast(t('off_unsupported')); return; }
+    if (!navigator.onLine) { toast(t('off_need_net')); return; }
+    offBusy = true; drawOffline(0);
+    try {
+      try { navigator.storage && navigator.storage.persist && await navigator.storage.persist(); } catch (e) { }
+      const tilesC = await caches.open('gr-tiles'), offC = await caches.open('gr-offline');
+      const tjRes = await fetch(TILEJSON, { cache: 'no-cache' }); if (!tjRes.ok) throw new Error('tilejson');
+      const tj = await tjRes.clone().json(); await tilesC.put(TILEJSON, tjRes);
+      const tpl = tj.tiles[0], maxz = Math.min(14, tj.maxzoom || 14);
+      const [s, w, n, e] = CITIES[city].bbox, pad = 0.03;
+      const jobs = []; // [cache, url]
+      for (let z = 5; z <= maxz; z++) {
+        const [x0, y0] = tileXY(n + pad, w - pad, z), [x1, y1] = tileXY(s - pad, e + pad, z);
+        for (let x = x0; x <= x1; x++) for (let y = y0; y <= y1; y++) jobs.push([tilesC, tpl.replace('{z}', z).replace('{x}', x).replace('{y}', y)]);
+      }
+      for (const f of FONTS) for (const r of RANGES) jobs.push([tilesC, `https://tiles.openfreemap.org/fonts/${encodeURIComponent(f)}/${r}.pbf`]);
+      const own = ['./', 'index.html', 'css/style.css', 'js/i18n.js', 'js/core.js', 'js/app.js', 'manifest.webmanifest', 'styles/game.json', 'data/signals-extra.json',
+        `data/v3/${city}.json`, `data/v3/${city}-places.json`, `data/v3/${city}-widths.json`, `data/v3/${city}-chowks.json`, `data/v3/${city}-signals.json`];
+      for (const u of own) jobs.push([offC, new URL(u, location.href).href]);
+      for (const el of document.querySelectorAll('script[src^="https://unpkg.com"],link[href^="https://unpkg.com"]')) jobs.push([offC, el.src || el.href]);
+      let done = 0, bytes = 0; const saved = [];
+      const one = async ([c, u]) => {
+        try {
+          let r = await c.match(u);
+          if (!r || c !== tilesC) { const f = await fetch(u, { cache: 'no-cache' }); if (f.ok) { await c.put(u, f.clone()); r = f; } }
+          if (r) { bytes += (await r.clone().arrayBuffer()).byteLength; saved.push(u); }
+        } catch (e) { }
+        done++; if (done % 4 === 0 || done === jobs.length) drawOffline(done / jobs.length);
+      };
+      let i = 0; await Promise.all(Array.from({ length: 6 }, async () => { while (i < jobs.length) await one(jobs[i++]); }));
+      const tilesOk = saved.filter(u => u.includes('/planet/')).length, tilesAll = jobs.filter(j => j[1].includes('/planet/')).length;
+      if (tilesOk < tilesAll * 0.9) throw new Error('tiles ' + tilesOk + '/' + tilesAll);
+      offInfo[city] = { at: Date.now(), bytes, n: saved.length, urls: saved }; store.set(OFF_KEY, offInfo);
+      toast(t('off_done', { c: cityName(city), mb: (bytes / 1048576).toFixed(1) }));
+    } catch (e) { toast(t('off_failed')); }
+    offBusy = false; drawOffline();
+  }
+  async function removeCity(city) {
+    const info = offInfo[city]; if (!info) return;
+    const others = new Set(Object.entries(offInfo).filter(([k]) => k !== city).flatMap(([, v]) => v.urls || []));
+    for (const name of ['gr-tiles', 'gr-offline']) { const c = await caches.open(name); for (const u of info.urls || []) if (!others.has(u)) await c.delete(u); }
+    delete offInfo[city]; store.set(OFF_KEY, offInfo); drawOffline(); toast(t('off_removed', { c: cityName(city) }));
+  }
+  function cityName(c) { return t(c); }
+  function drawOffline(progress) {
+    const box = $('offBox'); if (!box) return;
+    const info = offInfo[opt.city], c = esc(cityName(opt.city));
+    if (offBusy) { const pc = Math.round((progress || 0) * 100); box.innerHTML = `<div class="offbar"><i style="width:${pc}%"></i></div><small>${esc(t('off_saving', { c: cityName(opt.city), p: pc }))}</small>`; return; }
+    if (info) {
+      const d = new Date(info.at).toLocaleDateString(I18N.locale(), { day: 'numeric', month: 'short' });
+      box.innerHTML = `<small>✅ ${esc(t('off_saved', { c: cityName(opt.city), mb: (info.bytes / 1048576).toFixed(1), d }))}</small><div class="offbtns"><button id="offUpd">${esc(t('off_update'))}</button><button id="offDel">${esc(t('off_remove'))}</button></div>`;
+      $('offUpd').onclick = () => downloadCity(opt.city); $('offDel').onclick = () => removeCity(opt.city);
+    } else {
+      box.innerHTML = `<button id="offGet">⬇️ ${esc(t('off_download', { c: cityName(opt.city) }))}</button>`;
+      $('offGet').onclick = () => downloadCity(opt.city);
+    }
+  }
+  // going offline: switch to the saved (game-look) map and say so; coming back: restore
+  function onNet() {
+    const off = !navigator.onLine; document.body.classList.toggle('offline', off);
+    if (gameOn() !== document.body.classList.contains('game')) setBase();
+    toast(off ? (offInfo[opt.city] ? t('off_now_saved') : t('off_now_unsaved')) : t('off_back'));
+  }
+  addEventListener('online', onNet); addEventListener('offline', onNet);
+  if (!navigator.onLine) setTimeout(onNet, 500);
+  drawOffline();
+
   /* ---------------- street width layer ---------------- */
   map.createPane('widths'); map.getPane('widths').style.zIndex = 350; // under routes and markers
   const widthRenderer = L.canvas({ pane: 'widths' }), widthLayer = L.layerGroup().addTo(map);
@@ -1442,7 +1518,8 @@
     if (c === opt.city && G) return;
     opt.city = c; saveOpt(); $('citySel').value = c;
     A = B = null; if (mA) map.removeLayer(mA); if (mB) map.removeLayer(mB); mA = mB = null; $('qA').value = $('qB').value = '';
-    map.setView(CITIES[c].center, 13); drawQuick();
+    map.setView(CITIES[c].center, 13); drawQuick(); drawOffline();
+    if (gameOn() !== document.body.classList.contains('game')) setBase();
     await loadCity(c);
   }
 
