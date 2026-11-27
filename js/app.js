@@ -20,7 +20,7 @@
     amritsar: { bbox: [31.59, 74.81, 31.68, 74.93], center: [31.634, 74.873] },
     phagwara: { bbox: [31.20, 75.74, 31.25, 75.80], center: [31.224, 75.770] },
   };
-  const opt = Object.assign({ vehicle: 'car', traffic: 'auto', lang: 'en', theme: 'auto', voice: true, likely: true, wait: 45, city: 'jalandhar', widths: false, chowks: true }, store.get('gr-opt', {}));
+  const opt = Object.assign({ vehicle: 'car', traffic: 'auto', lang: 'en', theme: 'auto', voice: true, likely: true, wait: 45, city: 'jalandhar', widths: false, chowks: true, look: 'game' }, store.get('gr-opt', {}));
   if (!CITIES[opt.city]) opt.city = 'jalandhar';
   const saveOpt = () => store.set('gr-opt', opt);
 
@@ -62,10 +62,39 @@
   /* ---------------- map ---------------- */
   const map = L.map('map', { preferCanvas: true, zoomControl: !('ontouchstart' in window) }).setView(CITIES[opt.city].center, 13);
   let sized = false; new ResizeObserver(() => { map.invalidateSize(); if (!sized && map.getSize().x > 50) { sized = true; map.setView(CITIES[opt.city].center, 13); } }).observe($('map'));
-  L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 19, attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>' }).addTo(map);
+  // Base map: "game" = our own dark vector style (styles/game.json on OpenFreeMap tiles), "classic" = OpenStreetMap
+  let baseLayer = null;
+  const webgl = (() => { try { const c = document.createElement('canvas'); return !!(c.getContext('webgl2') || c.getContext('webgl')); } catch (e) { return false; } })();
+  const gameOn = () => opt.look === 'game' && webgl && !!L.maplibreGL;
+  function setBase() {
+    if (baseLayer) map.removeLayer(baseLayer);
+    baseLayer = gameOn()
+      ? L.maplibreGL({ style: 'styles/game.json', attribution: '&copy; <a href="https://openfreemap.org">OpenFreeMap</a> &copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>' })
+      : L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 19, attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>' });
+    baseLayer.addTo(map);
+    document.body.classList.toggle('game', gameOn());
+  }
+  setBase();
   const sigLayer = L.layerGroup().addTo(map), camLayer = L.layerGroup().addTo(map), repLayer = L.layerGroup().addTo(map),
     routeLayer = L.layerGroup().addTo(map), meLayer = L.layerGroup().addTo(map);
-  const pin = (c, txt) => L.divIcon({ className: '', html: `<div class="pin" style="background:${c}">${txt}</div>`, iconSize: [26, 26], iconAnchor: [13, 13] });
+  const pin = (c, txt) => L.divIcon({ className: '', html: txt === 'B' ? `<div class="pin waypoint" style="--c:${c}"><span>B</span></div>` : `<div class="pin" style="background:${c}">${txt}</div>`, iconSize: [26, 26], iconAnchor: [13, 13] });
+  // route colours: in the game look the chosen route is a glowing purple GPS line
+  const GPS = '#c34dff';
+  function drawLine(ll, color, on, layer, click) {
+    if (gameOn()) {
+      if (on) {
+        L.polyline(ll, { color: GPS, weight: 18, opacity: .22, interactive: false }).addTo(layer);
+        L.polyline(ll, { color: '#0b0f12', weight: 9, opacity: .9, interactive: false }).addTo(layer);
+      }
+      const l = L.polyline(ll, { color: on ? GPS : color, weight: on ? 6 : 3.5, opacity: on ? 1 : .45 }).addTo(layer);
+      if (click) l.on('click', click);
+      return l;
+    }
+    L.polyline(ll, { color: '#fff', weight: on ? 11 : 6, opacity: on ? .95 : .6, interactive: false }).addTo(layer);
+    const l = L.polyline(ll, { color, weight: on ? 7 : 4, opacity: on ? 1 : .55 }).addTo(layer);
+    if (click) l.on('click', click);
+    return l;
+  }
   let mA = null, mB = null;
 
   /* ---------------- data ---------------- */
@@ -279,8 +308,7 @@
     const ids = Object.keys(MODES).filter(k => results[k]);
     for (const id of [...ids].sort((a, b) => (a === sel) - (b === sel))) {
       const r = results[id], ll = r.path.map(i => [G.lat[i], G.lon[i]]), on = id === sel;
-      L.polyline(ll, { color: '#fff', weight: on ? 11 : 6, opacity: on ? .95 : .6, interactive: false }).addTo(routeLayer);
-      L.polyline(ll, { color: MODES[id].color, weight: on ? 7 : 4, opacity: on ? 1 : .55 }).on('click', () => { sel = id; render(); }).addTo(routeLayer);
+      drawLine(ll, MODES[id].color, on, routeLayer, () => { sel = id; render(); });
     }
     const cur = results[sel];
     for (const z of new Set(cur.signals)) { const c = Z.clusters[z]; L.circleMarker([c.lat, c.lon], { radius: 9, color: '#fff', weight: 2.5, fillColor: c.kind === 'sure' ? '#e5383b' : '#f2a516', fillOpacity: 1 }).bindTooltip(t(c.kind === 'sure' ? 'light_on_route' : 'likely_on_route')).addTo(routeLayer); }
@@ -767,8 +795,7 @@
     nav.said = new Set();
     routeLayer.clearLayers();
     const ll = r.path.map(i => [G.lat[i], G.lon[i]]);
-    L.polyline(ll, { color: '#fff', weight: 12, opacity: .95, interactive: false }).addTo(routeLayer);
-    nav.line = L.polyline(ll, { color: MODES[nav.mode].color, weight: 8, interactive: false }).addTo(routeLayer);
+    nav.line = drawLine(ll, MODES[nav.mode].color, true, routeLayer);
     for (const z of new Set(r.signals)) { const c = Z.clusters[z]; L.circleMarker([c.lat, c.lon], { radius: 8, color: '#fff', weight: 2, fillColor: c.kind === 'sure' ? '#e5383b' : '#f2a516', fillOpacity: 1, interactive: false }).addTo(routeLayer); }
   }
   async function startNav() {
@@ -776,6 +803,7 @@
     nav = { mode: sel, follow: true, startShort: results.short, startCur: r, lastReroute: 0 };
     setNavRoute(r);
     document.body.classList.add('navigating');
+    setRadar(false);
     recordTrip(r);
     try { if ('wakeLock' in navigator) wakeLock = await navigator.wakeLock.request('screen'); } catch (e) { }
     speak(t('v_start', { n: mins(r) }));
@@ -787,6 +815,7 @@
     if (watchId != null) navigator.geolocation.clearWatch(watchId); watchId = null;
     try { wakeLock && wakeLock.release(); } catch (e) { } wakeLock = null;
     document.body.classList.remove('navigating');
+    setRadar(false);
     nav = null; meLayer.clearLayers();
     if (arrived) { toast(t('arrived')); drawSavings(); }
     if (A && B) go();
@@ -1006,11 +1035,21 @@
     };
   }
 
+  function setRadar(on) {
+    document.body.classList.toggle('radar', !!on);
+    setTimeout(() => { map.invalidateSize(); if (nav && lastFix) map.setView(lastFix, on ? 17 : map.getZoom()); }, 60);
+  }
+  $('radarBtn').onclick = () => setRadar(!document.body.classList.contains('radar'));
+
   /* ---------------- theme, language, city ---------------- */
   function applyTheme() {
-    const dark = opt.theme === 'dark' || (opt.theme === 'auto' && matchMedia('(prefers-color-scheme: dark)').matches);
-    document.documentElement.dataset.theme = opt.theme === 'auto' ? '' : opt.theme;
-    document.body.classList.toggle('darkmap', dark);
+    // the game look always uses the dark interface unless the user picked Light
+    const game = gameOn();
+    const theme = opt.theme === 'auto' && game ? 'dark' : opt.theme;
+    const dark = theme === 'dark' || (theme === 'auto' && matchMedia('(prefers-color-scheme: dark)').matches);
+    document.documentElement.dataset.theme = theme === 'auto' ? '' : theme;
+    document.body.classList.toggle('darkmap', dark && !game);
+    document.querySelector('meta[name=theme-color]').content = game ? '#11181c' : '#1f9d55';
   }
   matchMedia('(prefers-color-scheme: dark)').addEventListener('change', applyTheme);
   function applyLang() {
@@ -1034,7 +1073,7 @@
     for (const b of $('vehSeg').children) b.classList.toggle('on', b.dataset.v === opt.vehicle);
     $('trWrap').hidden = !motor();
     $('trSel').options[0].textContent = t('auto_tr', { t: t('tr_' + autoTraffic()) }); $('trSel').value = opt.traffic;
-    $('citySel').value = opt.city; $('langSel').value = opt.lang; $('themeSel').value = opt.theme;
+    $('citySel').value = opt.city; $('langSel').value = opt.lang; $('themeSel').value = opt.theme; $('lookSel').value = opt.look;
     $('widths').checked = opt.widths; $('chowksOn').checked = opt.chowks;
     $('voice').checked = opt.voice; $('likely').checked = opt.likely; $('wait').value = opt.wait; $('wv').textContent = opt.wait + ' s';
   }
@@ -1043,6 +1082,7 @@
   $('citySel').onchange = () => switchCity($('citySel').value);
   $('langSel').onchange = () => { opt.lang = $('langSel').value; saveOpt(); applyLang(); };
   $('themeSel').onchange = () => { opt.theme = $('themeSel').value; saveOpt(); applyTheme(); };
+  $('lookSel').onchange = () => { opt.look = $('lookSel').value; saveOpt(); setBase(); applyTheme(); if (results.best) render(); drawChowks(); if (opt.look === 'game' && !gameOn()) toast(t('game_unsupported')); };
   $('chowksOn').onchange = () => { opt.chowks = $('chowksOn').checked; saveOpt(); drawChowks(); };
   $('widths').onchange = () => { opt.widths = $('widths').checked; saveOpt(); if (opt.widths && !(G && G.widths)) toast(t('widths_none')); if (opt.widths && map.getZoom() < 15) map.setZoom(15); drawWidths(); };
   $('voice').onchange = () => { opt.voice = $('voice').checked; saveOpt(); if (opt.voice) speak(t('v_test')); };

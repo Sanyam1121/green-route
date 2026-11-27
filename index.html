@@ -10,7 +10,8 @@
 <link rel="icon" href="icons/icon.svg" type="image/svg+xml">
 <link rel="apple-touch-icon" href="icons/icon-192.png">
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
-<link href="https://fonts.googleapis.com/css2?family=Hanken+Grotesk:wght@400;600;800&family=Noto+Sans+Devanagari:wght@400;600;800&family=Noto+Sans+Gurmukhi:wght@400;600;800&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.css">
+<link href="https://fonts.googleapis.com/css2?family=Hanken+Grotesk:wght@400;600;800&family=Noto+Sans+Devanagari:wght@400;600;800&family=Noto+Sans+Gurmukhi:wght@400;600;800&family=Rajdhani:wght@600;700&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="css/style.css">
 </head>
 <body>
@@ -43,6 +44,7 @@
   <details class="more" id="settings">
     <summary data-i18n="settings">Settings, places and fixes</summary>
     <div class="set">
+      <label class="lookrow"><span data-i18n="look_lbl">Map look</span><select id="lookSel"><option value="game" data-i18n="look_game">🎮 Game (dark)</option><option value="classic" data-i18n="look_classic">🗺️ Classic</option></select></label>
       <div class="grid3">
         <label><span data-i18n="city">City</span><select id="citySel"><option value="jalandhar" data-i18n="jalandhar">Jalandhar</option><option value="ludhiana" data-i18n="ludhiana">Ludhiana</option><option value="amritsar" data-i18n="amritsar">Amritsar</option><option value="phagwara" data-i18n="phagwara">Phagwara</option></select></label>
         <label><span data-i18n="language">Language</span><select id="langSel"><option value="en">English</option><option value="hi">हिन्दी</option><option value="pa">ਪੰਜਾਬੀ</option></select></label>
@@ -83,6 +85,7 @@
   <div class="hint" id="hint" hidden></div>
   <button class="fab" id="me" aria-label="Show my location" title="My location">◎</button>
   <button class="fab rep-fab" id="repBtn" aria-label="Report" title="Report">⚠️</button>
+  <button class="radar-btn" id="radarBtn" aria-label="Big map or radar">⤢</button>
 </div>
 </div>
 
@@ -112,6 +115,8 @@
 <div class="toast" id="toast"></div>
 
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script src="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.js"></script>
+<script src="https://unpkg.com/@maplibre/maplibre-gl-leaflet@0.0.22/leaflet-maplibre-gl.js"></script>
 <script src="js/i18n.js"></script>
 <script src="js/core.js"></script>
 <script src="js/app.js"></script>

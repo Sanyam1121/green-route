@@ -1,6 +1,7 @@
 /* Green Route translations: English, Hindi, Punjabi. Values are strings with {vars} or functions of vars. */
 var I18N = (function () {
   const en = {
+    look_lbl: 'Map look', look_game: '🎮 Game (dark)', look_classic: '🗺️ Classic', game_unsupported: 'This phone can’t draw the game map, so the classic map is shown.',
     chowks_lbl: 'Show chowks', chowks_sub: 'Every major junction and roundabout, with its name where known. Tap one to route there or to name it.',
     ty_chowk: 'Chowk', roundabout: 'Roundabout chowk', unnamed_chowk: 'Chowk (name not known)', route_here: 'Route here', start_here: 'Start from here',
     name_chowk: 'Name this chowk', rename_chowk: 'Fix the name', chowk_name_ph: 'e.g. Jyoti Chowk', chowk_saved: 'Saved: {n}',
@@ -87,6 +88,7 @@ var I18N = (function () {
   };
 
   const hi = {
+    look_lbl: 'मैप का रूप', look_game: '🎮 गेम (डार्क)', look_classic: '🗺️ सामान्य', game_unsupported: 'यह फ़ोन गेम मैप नहीं दिखा सकता, इसलिए सामान्य मैप दिख रहा है।',
     chowks_lbl: 'चौक दिखाएँ', chowks_sub: 'हर बड़ा चौराहा और गोल चक्कर, जहाँ पता है वहाँ नाम के साथ। रास्ते या नाम देने के लिए टैप करें।',
     ty_chowk: 'चौक', roundabout: 'गोल चक्कर चौक', unnamed_chowk: 'चौक (नाम पता नहीं)', route_here: 'यहाँ का रास्ता', start_here: 'यहाँ से शुरू करें',
     name_chowk: 'इस चौक का नाम दें', rename_chowk: 'नाम ठीक करें', chowk_name_ph: 'जैसे ज्योति चौक', chowk_saved: 'सेव हुआ: {n}',
@@ -173,6 +175,7 @@ var I18N = (function () {
   };
 
   const pa = {
+    look_lbl: 'ਨਕਸ਼ੇ ਦੀ ਦਿੱਖ', look_game: '🎮 ਗੇਮ (ਡਾਰਕ)', look_classic: '🗺️ ਆਮ', game_unsupported: 'ਇਹ ਫ਼ੋਨ ਗੇਮ ਨਕਸ਼ਾ ਨਹੀਂ ਵਿਖਾ ਸਕਦਾ, ਇਸ ਲਈ ਆਮ ਨਕਸ਼ਾ ਵਿਖ ਰਿਹਾ ਹੈ।',
     chowks_lbl: 'ਚੌਂਕ ਵਿਖਾਓ', chowks_sub: 'ਹਰ ਵੱਡਾ ਚੌਂਕ ਅਤੇ ਗੋਲ ਚੱਕਰ, ਜਿੱਥੇ ਪਤਾ ਹੈ ਉੱਥੇ ਨਾਂ ਨਾਲ। ਰਸਤੇ ਜਾਂ ਨਾਂ ਦੇਣ ਲਈ ਟੈਪ ਕਰੋ।',
     ty_chowk: 'ਚੌਂਕ', roundabout: 'ਗੋਲ ਚੱਕਰ ਚੌਂਕ', unnamed_chowk: 'ਚੌਂਕ (ਨਾਂ ਪਤਾ ਨਹੀਂ)', route_here: 'ਇੱਥੇ ਦਾ ਰਸਤਾ', start_here: 'ਇੱਥੋਂ ਸ਼ੁਰੂ ਕਰੋ',
     name_chowk: 'ਇਸ ਚੌਂਕ ਦਾ ਨਾਂ ਦਿਓ', rename_chowk: 'ਨਾਂ ਠੀਕ ਕਰੋ', chowk_name_ph: 'ਜਿਵੇਂ ਜੋਤੀ ਚੌਂਕ', chowk_saved: 'ਸੇਵ ਹੋਇਆ: {n}',
