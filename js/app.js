@@ -70,7 +70,7 @@
   function setBase() {
     if (baseLayer) map.removeLayer(baseLayer);
     baseLayer = gameOn()
-      ? L.maplibreGL({ style: 'styles/game.json?v=25', updateInterval: 0, attribution: '&copy; <a href="https://openfreemap.org">OpenFreeMap</a> &copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>' })
+      ? L.maplibreGL({ style: 'styles/game.json?v=26', updateInterval: 0, attribution: '&copy; <a href="https://openfreemap.org">OpenFreeMap</a> &copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>' })
       : L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 19, attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>' });
     if (baseLayer._roundPoint) baseLayer._roundPoint = p => p; // sub-pixel placement keeps the basemap glued to the route line
     baseLayer.addTo(map);
@@ -132,14 +132,16 @@
       cachePut(key, { t: Date.now(), d: c });
     }
     try { const j = await getJSON('data/signals-extra.json'); shared = { add: j.add || [], del: j.del || [] }; } catch (e) { }
-    photoSignals = [];
+    photoSignals = []; community = { since: 0, l: [] }; commRecent = [];
     if (!area) try { photoSignals = (await getJSON(`data/v3/${name}-signals.json`)).s || []; } catch (e) { }
+    if (!area) try { community = await getJSON(`data/v3/${name}-lights.json`); } catch (e) { }
     status(t('preparing')); await new Promise(r => setTimeout(r, 20));
     if (!area) { await loadPlaces(name); await loadChowks(name); drawBlips(); }
     let widths = null;
     if (!area) try { const wj = await getJSON(`data/v3/${name}-widths.json`); if (wj.roads_updated === c.updated) widths = wj.w; } catch (e) { }
     const g = Core.build(c, widths); Z = null; G = g; liveArea = area || null;
     applySignals(); drawCams(); loadReports(); drawWidths(); drawChowks();
+    if (!area) { pollCommunity(); sendOldFixes(); }
     if (!A || !B) idle();
     if (A && B) go();
   }
@@ -151,9 +153,12 @@
     const rl = [...reports, ...localReports].filter(r => r.t === 'redlight').map(r => [r.la, r.lo]);
     // traffic lights detected in Mapillary street photos count as confirmed
     for (const [la, lo] of photoSignals) { const n = Core.nearest(G, la, lo, true); if (n && n.m < 30) kinds.set(n.i, 'sure'); }
-    const allDel = [...shared.del, ...fixes.del], allAdd = [...shared.add, ...fixes.add, ...rl];
-    for (const [la, lo] of allDel) for (const s of [...kinds.keys()]) if (Core.hav(G.lat[s], G.lon[s], la, lo) < 45) kinds.delete(s);
-    for (const [la, lo] of allAdd) { const n = Core.nearest(G, la, lo, true); if (n && n.m < 40) kinds.set(n.i, 'sure'); }
+    // everyone's marks first, then this phone's own marks win
+    const cm = communityLists();
+    const del = list => { for (const [la, lo] of list) for (const s of [...kinds.keys()]) if (Core.hav(G.lat[s], G.lon[s], la, lo) < 45) kinds.delete(s); };
+    const add = list => { for (const [la, lo] of list) { const n = Core.nearest(G, la, lo, true); if (n && n.m < 40) kinds.set(n.i, 'sure'); } };
+    del([...shared.del, ...cm.del]); add([...shared.add, ...cm.add, ...rl]);
+    del(fixes.del); add(fixes.add);
     Z = Core.zones(G, kinds);
     drawSignals();
   }
@@ -1059,6 +1064,7 @@
     const pr = Core.project(G, nav.r, la, lo, nav.k);
     { const rp = nav.r.path, k = Math.min(pr.k, rp.length - 2); nav.routeHead = (Core.bearing(G.lat[rp[k]], G.lon[rp[k]], G.lat[rp[k + 1]], G.lon[rp[k + 1]]) + 360) % 360; }
     showMe(ll, p.coords.heading, p.coords.speed);
+    if (acc < 40) watchStop(la, lo);
     // on the route: the arrow is drawn ON the road and glides along it at the measured speed
     { const tN = performance.now(), gs = p.coords.speed;
       if (pr.off < 30) {
@@ -1114,11 +1120,13 @@
   map.on('dragstart', () => { if (nav) { nav.follow = false; $('navCenter').hidden = false; startLoop(); } });
   // test hook: drive along the current nav route
   window.GR = {
-    simulate(speedKmh = 30, everyMs = 1000) {
+    // test drive along the route; optionally wait stopFor seconds once stopAt metres in (like a red light)
+    simulate(speedKmh = 30, everyMs = 1000, stopAt = -1, stopFor = 0) {
       window.__grSim = true; if (!nav) startNav();
-      let along = 0; const r0 = nav.r;
+      let along = 0, waited = 0; const r0 = nav.r;
       const tick = () => {
-        if (!nav) return; const r = nav.r; along += speedKmh / 3.6 * everyMs / 1000;
+        if (!nav) return; const r = nav.r;
+        if (stopAt >= 0 && along >= stopAt && waited < stopFor * 1000) waited += everyMs; else along += speedKmh / 3.6 * everyMs / 1000;
         let k = 0; while (k < r.path.length - 1 && r.cum[k + 1] < along) k++;
         const i = r.path[k], j = r.path[Math.min(k + 1, r.path.length - 1)], f = Math.min(1, (along - r.cum[k]) / Math.max(1, r.cum[k + 1] - r.cum[k] || 1));
         onPos({ coords: { latitude: G.lat[i] + (G.lat[j] - G.lat[i]) * f, longitude: G.lon[i] + (G.lon[j] - G.lon[i]) * f, accuracy: 8 } });
@@ -1398,6 +1406,143 @@
   if (!navigator.onLine) setTimeout(onNet, 500);
   drawOffline();
 
+  /* ---------------- traffic lights marked by people (shared with everyone) ---------------- */
+  // Each mark goes to a public ntfy.sh topic (instant for others, kept 12 h); a GitHub job every 3 hours adds the marks
+  // to data/v3/<city>-lights.json so they last. A junction is a light while "light" marks outnumber "no light".
+  const lightsTopic = () => 'greenroute-pb7-' + opt.city + '-lights';
+  let community = { since: 0, l: [] }, commRecent = [];
+  async function pollCommunity() {
+    try {
+      const r = await fetch(`https://ntfy.sh/${lightsTopic()}/json?poll=1&since=12h`); if (!r.ok) return;
+      const out = [];
+      for (const ln of (await r.text()).split('\n')) {
+        let m, d; try { m = JSON.parse(ln); d = JSON.parse(m.message); } catch (e) { continue; }
+        if (m.event !== 'message' || m.time <= (community.since || 0)) continue;
+        if ((d.t === 'light' || d.t === 'nolight') && typeof d.la === 'number' && typeof d.lo === 'number' && inCity(d.la, d.lo)) out.push(d);
+      }
+      const changed = out.length !== commRecent.length; commRecent = out;
+      if (changed && G) { applySignals(); if (A && B && !nav) go(); }
+    } catch (e) { }
+  }
+  // marks within 40 m of each other are the same junction; add up their votes
+  function communityLists() {
+    const groups = [];
+    const addVote = (la, lo, y, n) => { const g = groups.find(g => Core.hav(g[0], g[1], la, lo) < 40); if (g) { g[2] += y; g[3] += n; } else groups.push([la, lo, y, n]); };
+    for (const [la, lo, y, n] of community.l || []) addVote(la, lo, y, n);
+    for (const d of commRecent) addVote(d.la, d.lo, d.t === 'light' ? 1 : 0, d.t === 'nolight' ? 1 : 0);
+    return { add: groups.filter(g => g[2] > g[3]).map(g => [g[0], g[1]]), del: groups.filter(g => g[3] > g[2]).map(g => [g[0], g[1]]) };
+  }
+  function postLight(kind, la, lo) {
+    fetch(`https://ntfy.sh/${lightsTopic()}`, { method: 'POST', body: JSON.stringify({ t: kind, la: +la.toFixed(6), lo: +lo.toFixed(6) }) }).catch(() => { });
+  }
+  // nearest real junction (3+ roads meet), so every phone's mark lands on the same point
+  function nearestJunction(la, lo, max = 60) {
+    if (!G) return null;
+    let best = -1, bd = max; const dl = max / 111000 * 1.2, dlo = dl / Math.cos(la * Math.PI / 180);
+    for (let i = 0; i < G.N; i++) {
+      if (G.deg[i] < 3) continue; const a = G.lat[i], o = G.lon[i];
+      if (Math.abs(a - la) > dl || Math.abs(o - lo) > dlo) continue;
+      const d = Core.hav(la, lo, a, o); if (d < bd) { bd = d; best = i; }
+    }
+    return best < 0 ? null : { i: best, m: bd, la: G.lat[best], lo: G.lon[best] };
+  }
+  const lightAt = (la, lo) => Z && Z.clusters.find(c => Core.hav(c.lat, c.lon, la, lo) < 40);
+  const placeName = (la, lo) => { const c = chowkAt(la, lo, 70); return c ? c.n : t('this_junction'); };
+  function setLight(on, la, lo, post = true) {
+    fixes.add = fixes.add.filter(([a, o]) => Core.hav(a, o, la, lo) >= 45);
+    fixes.del = fixes.del.filter(([a, o]) => Core.hav(a, o, la, lo) >= 45);
+    (on ? fixes.add : fixes.del).push([+la.toFixed(6), +lo.toFixed(6)]);
+    store.set('gr-fixes', fixes); if (post) postLight(on ? 'light' : 'nolight', la, lo);
+  }
+  function afterLightChange() { applySignals(); if (A && B && !nav) go(); }
+  // one place to mark: a junction near a point (tap, long-press, GPS or pasted coordinates)
+  function markLight(on, la, lo, quiet) {
+    const j = nearestJunction(la, lo, on ? 60 : 50);
+    const c = lightAt(j ? j.la : la, j ? j.lo : lo);
+    if (!on) { if (!c) { if (!quiet) toast(t('no_light_there')); return false; } const jj = nearestJunction(c.lat, c.lon, 45); setLight(false, jj ? jj.la : c.lat, jj ? jj.lo : c.lon); }
+    else {
+      if (!j) { if (!quiet) toast(t('no_junction')); return false; }
+      if (c && c.kind === 'sure') { if (!quiet) toast(t('already_light', { c: placeName(j.la, j.lo) })); return false; }
+      setLight(true, j.la, j.lo);
+    }
+    if (!quiet) { afterLightChange(); toast(on ? t('light_marked', { c: placeName(j.la, j.lo) }) : t('light_removed')); }
+    return true;
+  }
+  // long-press the map (or right-click) anywhere: light here / no light here
+  map.on('contextmenu', e => {
+    if (!G || document.body.classList.contains('rotmap')) return;
+    const j = nearestJunction(e.latlng.lat, e.latlng.lng, 60), c = lightAt(j ? j.la : e.latlng.lat, j ? j.lo : e.latlng.lng);
+    const div = document.createElement('div'); div.className = 'pop';
+    div.innerHTML = `<b>${esc(j ? placeName(j.la, j.lo) : t('no_junction'))}</b>` +
+      (c ? `<button data-a="off">${esc(t('no_light_here'))}</button>` : '') + (j && !(c && c.kind === 'sure') ? `<button data-a="on">🚦 ${esc(t('light_here'))}</button>` : '');
+    div.onclick = ev => { const a = ev.target.dataset.a; if (!a) return; map.closePopup(); markLight(a === 'on', e.latlng.lat, e.latlng.lng); };
+    L.popup().setLatLng(j ? [j.la, j.lo] : e.latlng).setContent(div).openOn(map);
+  });
+  // paste: coordinates, Google Maps links or 31°19'32"N 75°34'45"E — one light per line
+  function parseCoords(text) {
+    const pts = [], bad = [];
+    const dms = (d, m, s, h) => (+d + m / 60 + s / 3600) * (/[SW]/i.test(h) ? -1 : 1);
+    for (const raw of text.split(/\n|;/)) {
+      const line = raw.trim(); if (!line) continue;
+      let m = line.match(/!3d(-?\d+\.\d+)!4d(-?\d+\.\d+)/) || line.match(/[@=/](-?\d{1,2}\.\d{3,}),\s*\+?(-?\d{1,3}\.\d{3,})/) || line.match(/(-?\d{1,2}\.\d{3,})\s*[,\s]\s*\+?(-?\d{1,3}\.\d{3,})/);
+      if (m) { pts.push([+m[1], +m[2]]); continue; }
+      m = line.match(/(\d+)\s*°\s*(\d+)\s*['′]\s*([\d.]+)\s*["″]?\s*([NS])[\s,]+(\d+)\s*°\s*(\d+)\s*['′]\s*([\d.]+)\s*["″]?\s*([EW])/i);
+      if (m) { pts.push([dms(m[1], m[2], m[3], m[4]), dms(m[5], m[6], m[7], m[8])]); continue; }
+      bad.push(line);
+    }
+    return { pts, bad };
+  }
+  function addPasted() {
+    const { pts, bad } = parseCoords($('lightsPaste').value);
+    if (!pts.length && !bad.length) { toast(t('paste_empty')); return; }
+    let added = 0, already = 0, far = 0, out = 0; const shown = [];
+    for (const [la, lo] of pts) {
+      if (!inCity(la, lo)) { out++; continue; }
+      const j = nearestJunction(la, lo, 60); if (!j) { far++; continue; }
+      const c = lightAt(j.la, j.lo); if (c && c.kind === 'sure') { already++; continue; }
+      setLight(true, j.la, j.lo); added++; shown.push([j.la, j.lo]);
+    }
+    afterLightChange();
+    const short = bad.filter(x => /goo\.gl|maps\.app/.test(x)).length;
+    const parts = [t('paste_added', { n: added })];
+    if (already) parts.push(t('paste_already', { n: already }));
+    if (far) parts.push(t('paste_far', { n: far }));
+    if (out) parts.push(t('paste_out', { n: out }));
+    if (short) parts.push(t('paste_short', { n: short }));
+    if (bad.length > short) parts.push(t('paste_bad', { n: bad.length - short }));
+    $('pasteResult').textContent = parts.join(' · ');
+    if (added) { $('lightsPaste').value = ''; toast(t('paste_added', { n: added })); if (shown.length) map.fitBounds(L.latLngBounds(shown).pad(0.3), { maxZoom: 16 }); if (isPhone()) $('panel').classList.add('min'); }
+  }
+  $('pasteAdd').onclick = addPasted;
+  // while driving: one tap marks the junction you're at
+  $('navLight').onclick = () => { const p = lastFix || me.disp; if (!p) { toast(t('no_junction')); return; } markLight(true, p.lat, p.lng); };
+  // after waiting 20 s – 3 min next to a junction with no confirmed light: "was that a red light?"
+  const asked = new Set(); let askTimer = 0;
+  function watchStop(la, lo) {
+    const now = Date.now(), s = nav.stopAt;
+    if (s && Core.hav(s.la, s.lo, la, lo) < 15) return;
+    if (s) { const secs = (now - s.t) / 1000; if (secs >= 20 && secs <= 180) maybeAskLight(s.la, s.lo); }
+    nav.stopAt = { la, lo, t: now };
+  }
+  function maybeAskLight(la, lo) {
+    const j = nearestJunction(la, lo, 45); if (!j || asked.has(j.i)) return;
+    const c = lightAt(j.la, j.lo); if (c && c.kind === 'sure') return;
+    if (nav && nav.r && Core.hav(la, lo, G.lat[nav.r.path[nav.r.path.length - 1]], G.lon[nav.r.path[nav.r.path.length - 1]]) < 120) return; // arriving, not a light
+    asked.add(j.i);
+    $('askText').textContent = t('ask_light', { c: placeName(j.la, j.lo) });
+    $('ask').hidden = false; clearTimeout(askTimer); askTimer = setTimeout(() => { $('ask').hidden = true; }, 15000);
+    $('askYes').onclick = () => { $('ask').hidden = true; setLight(true, j.la, j.lo); applySignals(); toast(t('light_marked', { c: placeName(j.la, j.lo) })); };
+    $('askNo').onclick = () => { $('ask').hidden = true; if (c) { setLight(false, j.la, j.lo); applySignals(); } };
+  }
+  // marks made before sharing existed: send them once
+  function sendOldFixes() {
+    const key = 'gr-fixes-sent-' + opt.city; if (store.get(key, 0)) return;
+    for (const [la, lo] of fixes.add) if (inCity(la, lo)) postLight('light', la, lo);
+    for (const [la, lo] of fixes.del) if (inCity(la, lo)) postLight('nolight', la, lo);
+    store.set(key, 1);
+  }
+  setInterval(() => { if (G && navigator.onLine) pollCommunity(); }, 180000);
+
   /* ---------------- street width layer ---------------- */
   map.createPane('widths'); map.getPane('widths').style.zIndex = 350; // under routes and markers
   const widthRenderer = L.canvas({ pane: 'widths' }), widthLayer = L.layerGroup().addTo(map);
@@ -1459,18 +1604,8 @@
   });
   function toggleSignal(ll) {
     if (!G) return;
-    const near = Z.clusters.findIndex(c => Core.hav(c.lat, c.lon, ll.lat, ll.lng) < 40);
-    if (near >= 0) {
-      const c = Z.clusters[near];
-      fixes.add = fixes.add.filter(([a, o]) => Core.hav(a, o, c.lat, c.lon) >= 45);
-      fixes.del.push([+c.lat.toFixed(6), +c.lon.toFixed(6)]); toast(t('light_removed'));
-    } else {
-      const n = Core.nearest(G, ll.lat, ll.lng, true);
-      if (!n || n.m > 40) { toast(t('tap_closer')); return; }
-      fixes.del = fixes.del.filter(([a, o]) => Core.hav(a, o, G.lat[n.i], G.lon[n.i]) >= 45);
-      fixes.add.push([+G.lat[n.i].toFixed(6), +G.lon[n.i].toFixed(6)]); toast(t('light_added'));
-    }
-    store.set('gr-fixes', fixes); applySignals(); go();
+    const c = lightAt(ll.lat, ll.lng);
+    markLight(!c, ll.lat, ll.lng);
   }
 
   /* ---------------- report sheet ---------------- */
