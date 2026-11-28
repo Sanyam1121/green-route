@@ -20,7 +20,7 @@
     amritsar: { bbox: [31.59, 74.81, 31.68, 74.93], center: [31.634, 74.873] },
     phagwara: { bbox: [31.20, 75.74, 31.25, 75.80], center: [31.224, 75.770] },
   };
-  const opt = Object.assign({ gaps: true, blips: true, blipHide: [], vehicle: 'car', traffic: 'auto', lang: 'en', theme: 'auto', voice: true, likely: true, wait: 45, city: 'jalandhar', widths: false, chowks: true, look: 'game', rotate: true, tilt: true }, store.get('gr-opt', {}));
+  const opt = Object.assign({ wrongWay: false, gaps: true, blips: true, blipHide: [], vehicle: 'car', traffic: 'auto', lang: 'en', theme: 'auto', voice: true, likely: true, wait: 45, city: 'jalandhar', widths: false, chowks: true, look: 'game', rotate: true, tilt: true }, store.get('gr-opt', {}));
   if (!CITIES[opt.city]) opt.city = 'jalandhar';
   const saveOpt = () => store.set('gr-opt', opt);
 
@@ -70,7 +70,7 @@
   function setBase() {
     if (baseLayer) map.removeLayer(baseLayer);
     baseLayer = gameOn()
-      ? L.maplibreGL({ style: 'styles/game.json?v=32', updateInterval: 0, attribution: '&copy; <a href="https://openfreemap.org">OpenFreeMap</a> &copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>' })
+      ? L.maplibreGL({ style: 'styles/game.json?v=33', updateInterval: 0, attribution: '&copy; <a href="https://openfreemap.org">OpenFreeMap</a> &copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>' })
       : L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 19, attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>' });
     if (baseLayer._roundPoint) baseLayer._roundPoint = p => p; // sub-pixel placement keeps the basemap glued to the route line
     baseLayer.addTo(map);
@@ -267,7 +267,7 @@
     const sp = speeds(false, when), car = opt.vehicle === 'car';
     // divider gaps cost a wait (crossing traffic / U-turn); off in Settings if they cause bad routes
     const gapPen = { car: 30, bike: 15, cycle: 10, walk: 5 }[opt.vehicle] ?? 30;
-    const base = { who: opt.vehicle, realSp: sp, narrowFactor: car ? 2.5 : 1, pen: car ? pen.car : pen.bike, block, narrowBlock: car && !relaxNarrow, gapPen, noGaps: !opt.gaps, noCar: car && noCar.size ? noCar : null };
+    const base = { who: opt.vehicle, realSp: sp, narrowFactor: car ? 2.5 : 1, pen: car ? pen.car : pen.bike, block, narrowBlock: car && !relaxNarrow, gapPen, noGaps: !opt.gaps, wrongWay: opt.vehicle === 'bike' && !!opt.wrongWay, noCar: car && noCar.size ? noCar : null };
     if (mode === 'short') return { ...base, mode: 'short', costSp: sp };
     if (mode === 'few') return { ...base, mode: 'time', P: 900, costSp: sp };
     if (mode === 'gali') return { ...base, mode: 'time', P: lightWait() * 1.5, costSp: speeds(true, when) };
@@ -362,7 +362,7 @@
       else if (ds > 0) why = t('why_skips', { n: ds, extra: dk > 0.05 ? t('km_more', { k: dk.toFixed(1) }) : t('same_dist') }) + (dm > 0 ? ' ' + t('saves_min', { n: dm }) : '');
       else why = dk > 0.05 ? t('why_longer_quicker', { k: dk.toFixed(1) }) : t('why_quickest');
     }
-    const warn = opt.vehicle !== 'car' ? '' : cur.tight > 40 ? `<div class="warn">${esc(t('tight_warn', { k: (cur.tight / 1000).toFixed(1), w: cur.minW.toFixed(1) }))}</div>`
+    const warn = cur.against > 0 ? `<div class="warn">⚠️ ${esc(t('wrong_warn', { m: Math.round(cur.against / 10) * 10 }))}</div>` : opt.vehicle !== 'car' ? '' : cur.tight > 40 ? `<div class="warn">${esc(t('tight_warn', { k: (cur.tight / 1000).toFixed(1), w: cur.minW.toFixed(1) }))}</div>`
       : cur.narrow > 100 ? `<div class="warn">${esc(t('narrow_warn', { k: (cur.narrow / 1000).toFixed(1) }))}</div>` : '';
     const repOn = reportsOnRoute(cur).filter(x => x.t !== 'redlight');
     const repWarn = repOn.length ? `<div class="warn">${esc(t('reports_on_route', { list: [...new Set(repOn.map(x => REPORT[x.t].icon + ' ' + t('rep_' + x.t)))].join(', ') }))}</div>` : '';
@@ -1974,7 +1974,7 @@
     $('trWrap').hidden = !motor();
     $('trSel').options[0].textContent = t('auto_tr', { t: t('tr_' + autoTraffic()) }); $('trSel').value = opt.traffic;
     $('citySel').value = opt.city; $('langSel').value = opt.lang; $('themeSel').value = opt.theme; $('lookSel').value = opt.look;
-    $('widths').checked = opt.widths; $('chowksOn').checked = opt.chowks; $('blipsOn').checked = opt.blips; $('gapsOn').checked = opt.gaps; $('rotateOn').checked = opt.rotate; $('tiltOn').checked = opt.tilt;
+    $('widths').checked = opt.widths; $('chowksOn').checked = opt.chowks; $('blipsOn').checked = opt.blips; $('gapsOn').checked = opt.gaps; $('wrongOn').checked = opt.wrongWay; $('rotateOn').checked = opt.rotate; $('tiltOn').checked = opt.tilt;
     $('voice').checked = opt.voice; $('likely').checked = opt.likely; $('wait').value = opt.wait; $('wv').textContent = opt.wait + ' s';
   }
   $('vehSeg').onclick = e => { const b = e.target.closest('button'); if (!b) return; opt.vehicle = b.dataset.v; saveOpt(); drawOpts(); drawNarrow(); go(); };
@@ -1986,6 +1986,7 @@
   $('rotateOn').onchange = () => { opt.rotate = $('rotateOn').checked; saveOpt(); startLoop(); };
   $('tiltOn').onchange = () => { opt.tilt = $('tiltOn').checked; saveOpt(); camState = ''; startLoop(); };
   $('chowksOn').onchange = () => { opt.chowks = $('chowksOn').checked; saveOpt(); drawChowks(); };
+  $('wrongOn').onchange = () => { opt.wrongWay = $('wrongOn').checked; saveOpt(); if (A && B && !nav) go(); };
   $('gapsOn').onchange = () => { opt.gaps = $('gapsOn').checked; saveOpt(); if (A && B && !nav) go(); };
   $('blipsOn').onchange = () => { opt.blips = $('blipsOn').checked; if (opt.blips) opt.blipHide = []; saveOpt(); drawBlips(); };
   $('widths').onchange = () => { opt.widths = $('widths').checked; saveOpt(); if (opt.widths && !(G && G.widths)) toast(t('widths_none')); if (opt.widths && map.getZoom() < 15) map.setZoom(15); drawWidths(); };

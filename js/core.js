@@ -126,7 +126,7 @@ var Core = (function () {
   // Which nodes a traveller can start from / end at (has at least one usable edge).
   function usable(G, o) {
     G._mask = G._mask || {};
-    const key = o.who + ':' + (o.narrowBlock ? 1 : 0) + ':' + o.realSp.map(x => x > 0 ? 1 : 0).join('');
+    const key = o.who + ':' + (o.narrowBlock ? 1 : 0) + ':' + (o.wrongWay ? 1 : 0) + ':' + o.realSp.map(x => x > 0 ? 1 : 0).join('');
     if (G._mask[key]) return G._mask[key];
     const m = new Uint8Array(G.N);
     for (let i = 0; i < G.N; i++) { if (!G.main[i]) continue; const a = G.adj[i]; for (let k = 0; k < a.length; k += 3) if (allowed(a[k + 2], o)) { m[i] = 1; break; } }
@@ -135,7 +135,8 @@ var Core = (function () {
   function allowed(info, o) {
     if (!o.realSp[info & 15]) return false;
     const who = o.who || 'car';
-    if ((info & 64) && who !== 'walk') return false;
+    // against a one-way: walking always; a bike only if the rider allowed it, and only on small lanes (never main roads)
+    if ((info & 64) && who !== 'walk' && !(who === 'bike' && o.wrongWay && (info & 15) >= 5)) return false;
     // widths are measured wall to wall, which is wider than the space a car really gets (drains, steps, parked bikes):
     // under 5 m between buildings counts as too narrow for a car
     if (who === 'car') { if (info & 160) return false; const wc = (info >> 10) & 63; return !(o.narrowBlock && wc && wc < 10); }
@@ -225,6 +226,7 @@ var Core = (function () {
         if (!rs[info & 15] || !allowed(info, o)) continue;
         let c = short ? len : len / cs[info & 15];
         if (info & GAP) { if (gapCost === Infinity) continue; c += (info & 15) <= 1 ? gapCost * 3 : gapCost; } // highways: few real gaps
+        if ((info & 64) && o.who === 'bike') c = c * 2.5 + (short ? 40 : 6); // wrong way: slow and careful, only when it really saves time
         if (car && (info & 16)) c *= nf;
         if (car) {
           if (o.noCar && o.noCar.has(u * N + v)) continue; // marked "too narrow for cars" by people
@@ -246,7 +248,7 @@ var Core = (function () {
 
   // Distance, time, small-street and narrow-lane metres, red-light zones and cumulative distance along a path.
   function measure(G, Z, path, realSp, o) {
-    let gaps = 0, len = 0, time = 0, small = 0, narrow = 0, r_paths = 0, tight = 0, minW = Infinity, prevTight = false; const tightAt = []; const hit = [], hitAt = [], cum = new Float64Array(path.length), info = new Int32Array(path.length);
+    let against = 0, gaps = 0, len = 0, time = 0, small = 0, narrow = 0, r_paths = 0, tight = 0, minW = Infinity, prevTight = false; const tightAt = []; const hit = [], hitAt = [], cum = new Float64Array(path.length), info = new Int32Array(path.length);
     for (let k = 0; k + 1 < path.length; k++) {
       const u = path[k], v = path[k + 1], a = G.adj[u];
       for (let j = 0; j < a.length; j += 3) if (a[j] === v && (!o || allowed(a[j + 2], o))) {
@@ -259,13 +261,14 @@ var Core = (function () {
         prevTight = isTight;
         if (f & 16) narrow += a[j + 1];
         if (f & GAP) gaps++;
+        if ((f & 64) && o && o.who !== 'walk') against += a[j + 1];
         break;
       }
       cum[k + 1] = len;
       const zv = Z.zone[v];
       if (zv >= 0 && zv !== Z.zone[u] && k + 1 < path.length - 1) { hit.push(zv); hitAt.push(k + 1); }
     }
-    return { path, len, time, gaps, small, narrow, paths: r_paths, tight, minW: isFinite(minW) ? minW : 0, tightAt, signals: hit, signalAt: hitAt, cum, info };
+    return { path, len, time, gaps, against, small, narrow, paths: r_paths, tight, minW: isFinite(minW) ? minW : 0, tightAt, signals: hit, signalAt: hitAt, cum, info };
   }
 
   // Turn-by-turn steps from a measured route.
